@@ -119,10 +119,16 @@ function renderSide() {
     return `<a class="svc ${s.service === cur ? "sel" : ""}" href="#/service/${encodeURIComponent(s.service)}"><i class="dot ${crit ? "crit" : ""}"></i><span class="svc-name">${esc(s.service)}</span>
       <span class="svc-rate ${crit ? "crit" : ""}">${pct(s.recent_error_rate, crit ? 0 : 1)}</span></a>`;
   }).join("");
-  const h = state.history, avg = h.length ? h.reduce((a, b) => a + b, 0) / h.length : null;
-  $("#session").innerHTML = `<div class="mini"><span>Diagnostics agent</span><b>${h.length}</b></div>
-    <div class="mini"><span>Durée moyenne</span><b>${avg !== null ? avg.toFixed(1) + " s" : "—"}</b></div>
-    <div class="mini"><span>MTTR économisé</span><b>${avg !== null ? pct(1 - avg / HUMAN_S, 1) : "—"}</b></div>`;
+  // Durées réelles : diagnostics automatiques du watchdog (/alerts) + diagnostics lancés à la main dans cet onglet.
+  const h = [...state.alerts.map((x) => x.metrics?.diagnosis_seconds), ...state.history].filter((x) => typeof x === "number");
+  const avg = h.length ? h.reduce((p, c) => p + c, 0) / h.length : null;
+  $("#session").innerHTML = avg === null
+    ? `<div class="side-t">Diagnostics (watchdog + manuels)</div><div class="side-empty">Aucun diagnostic pour l'instant : le watchdog diagnostique seul les nouveaux incidents.</div>`
+    : `<div class="side-t">Diagnostics (watchdog + manuels)</div>
+      <div class="mini"><span>Réalisés</span><b>${h.length}</b></div>
+      <div class="mini"><span>Durée moyenne</span><b>${avg.toFixed(1).replace(".", ",")} s</b></div>
+      <div class="mini" title="Calculé sur les durées réelles, par rapport à une hypothèse de 45 min en manuel (2700 s)"><span>MTTR économisé</span><b>${pct(1 - avg / HUMAN_S, 1)}</b></div>
+      <div class="side-empty">vs 45 min en manuel (hypothèse)</div>`;
 }
 
 /* ---------- dashboard ---------- */
