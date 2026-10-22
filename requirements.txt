@@ -8,3 +8,4 @@ opensearch-py>=2.6
 psycopg[binary]>=3.2
 requests>=2.32
 pytest>=8.0
+pandas>=2.2
