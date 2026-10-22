@@ -1,0 +1,44 @@
+THE DATA LAYER IN ACTION — cas OB-checkoutservice_cpu-1
+Panne injectée (vérité terrain) : checkoutservice / cpu à 2024-01-15 21:36:06
+Volumes : 171322 logs -> ClickHouse (Aiven), 391997 spans -> OpenSearch (Aiven), manifeste des cas -> ClickHouse (rca_cases)
+
+Requêtes réellement exécutées par l'agent :
+
+[1] ClickHouse (logs) — 90 lignes — 84 ms
+SELECT case_id, root_cause_service, fault_type, inject_ts, start_ts, end_ts, n_logs, n_spans FROM rca_cases ORDER BY case_id
+
+[2] ClickHouse (logs) — 90 lignes — 752 ms
+SELECT case_id, root_cause_service, fault_type, inject_ts, start_ts, end_ts, n_logs, n_spans FROM rca_cases ORDER BY case_id
+
+[3] ClickHouse (logs) — 10 lignes — 137 ms
+SELECT service_name, countIf(ts >= {b0:DateTime64(3)} AND ts < {b1:DateTime64(3)}) AS nb, countIf(ts >= {a0:DateTime64(3)} AND ts < {a1:DateTime64(3)}) AS na, countIf(status_code >= 500 AND ts >= {b0:DateTime64(3)} AND ts < {b1:DateTime64(3)}) AS eb, countIf(status_code >= 500 AND ts >= {a0:DateTime64(3)} AND ts < {a1:DateTime64(3)}) AS ea FROM rca_logs WHERE case_id = {c:String} GROUP BY service_name
+
+[4] ClickHouse (logs) — 25 lignes — 886 ms
+SELECT toStartOfMinute(ts) AS m, countIf(status_code >= 500) / count() AS error_rate, count() AS total_requests FROM rca_logs WHERE case_id = {c:String} GROUP BY m ORDER BY m
+
+[5] ClickHouse (logs) — 90 lignes — 31 ms
+SELECT case_id, root_cause_service, fault_type, inject_ts, start_ts, end_ts, n_logs, n_spans FROM rca_cases ORDER BY case_id
+
+[6] OpenSearch (spans) — 10000 spans (total plafonné à 10000) — 182 ms
+{'size': 0, 'query': {'bool': {'filter': [{'term': {'caseId': 'OB-checkoutservice_cpu-1'}}, {'range': {'startTime': {'gte': 1705353846000, 'lt': 1705354325666}}}]}}, 'aggs': {'op': {'composite': {'size': 1000, 'sources': [{'svc': {'terms': {'field': 'serviceName'}}}, {'op': {'terms': {'field': 'operationName'}}}]}, 'aggs': {'avg': {'avg': {'field': 'durationInNanos'}}, 'err': {'filter': {'term': {'status.code': 'ERROR'}}}}}}}
+
+[7] OpenSearch (spans) — 10000 spans (total plafonné à 10000) — 55 ms
+{'size': 0, 'query': {'bool': {'filter': [{'term': {'caseId': 'OB-checkoutservice_cpu-1'}}, {'range': {'startTime': {'gte': 1705354805333, 'lt': 1705355285000}}}]}}, 'aggs': {'op': {'composite': {'size': 1000, 'sources': [{'svc': {'terms': {'field': 'serviceName'}}}, {'op': {'terms': {'field': 'operationName'}}}]}, 'aggs': {'avg': {'avg': {'field': 'durationInNanos'}}, 'err': {'filter': {'term': {'status.code': 'ERROR'}}}}}}}
+
+[8] OpenSearch (spans) — 669 spans (total plafonné à 10000) — 26 ms
+{'size': 0, 'query': {'bool': {'filter': [{'term': {'caseId': 'OB-checkoutservice_cpu-1'}}, {'term': {'serviceName': 'checkoutservice'}}, {'term': {'operationName': 'hipstershop.EmailService/SendOrderConfirmation'}}]}}, 'aggs': {'m': {'date_histogram': {'field': 'startTime', 'fixed_interval': '1m'}, 'aggs': {'avg': {'avg': {'field': 'durationInNanos'}}}}}}
+
+[9] ClickHouse (logs) — 90 lignes — 208 ms
+SELECT case_id, root_cause_service, fault_type, inject_ts, start_ts, end_ts, n_logs, n_spans FROM rca_cases ORDER BY case_id
+
+[10] OpenSearch (spans) — 219 spans (total plafonné à 10000) — 920 ms
+{'size': 0, 'query': {'bool': {'filter': [{'term': {'caseId': 'OB-checkoutservice_cpu-1'}}, {'wildcard': {'operationName': '*CheckoutService/PlaceOrder'}}, {'term': {'serviceName': 'frontendservice'}}, {'range': {'startTime': {'gte': 1705353846000, 'lt': 1705354325666}}}]}}, 'aggs': {'avg': {'avg': {'field': 'durationInNanos'}}, 'p95': {'percentiles': {'field': 'durationInNanos', 'percents': [95]}}, 'err': {'filter': {'term': {'status.code': 'ERROR'}}}}}
+
+[11] OpenSearch (spans) — 207 spans (total plafonné à 10000) — 326 ms
+{'size': 0, 'query': {'bool': {'filter': [{'term': {'caseId': 'OB-checkoutservice_cpu-1'}}, {'wildcard': {'operationName': '*CheckoutService/PlaceOrder'}}, {'term': {'serviceName': 'frontendservice'}}, {'range': {'startTime': {'gte': 1705354805333, 'lt': 1705355285000}}}]}}, 'aggs': {'avg': {'avg': {'field': 'durationInNanos'}}, 'p95': {'percentiles': {'field': 'durationInNanos', 'percents': [95]}}, 'err': {'filter': {'term': {'status.code': 'ERROR'}}}}}
+
+[12] ClickHouse (logs) — 90 lignes — 66 ms
+SELECT case_id, root_cause_service, fault_type, inject_ts, start_ts, end_ts, n_logs, n_spans FROM rca_cases ORDER BY case_id
+
+Cause racine trouvée : checkoutservice  (vérité : checkoutservice)
+Diagnostic en 7.7 s

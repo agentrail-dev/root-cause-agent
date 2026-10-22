@@ -1,0 +1,91 @@
+case_id,fault_type,truth,baseline_found,baseline_ok,baseline_s,latency_found,latency_ok,agent_found,agent_ok,agent_s,onset_error_s
+OB-checkoutservice_cpu-1,cpu,checkoutservice,(aucun log d'erreur),0,0.9,emailservice,0,checkoutservice,1,1.9,6.0
+OB-checkoutservice_cpu-2,cpu,checkoutservice,frontend,0,0.4,checkoutservice,1,checkoutservice,1,2.6,
+OB-checkoutservice_cpu-3,cpu,checkoutservice,(aucun log d'erreur),0,0.3,checkoutservice,1,checkoutservice,1,3.4,301.0
+OB-checkoutservice_delay-1,delay,checkoutservice,(aucun log d'erreur),0,0.5,checkoutservice,1,checkoutservice,1,1.4,11.0
+OB-checkoutservice_delay-2,delay,checkoutservice,(aucun log d'erreur),0,0.9,checkoutservice,1,checkoutservice,1,2.0,21.0
+OB-checkoutservice_delay-3,delay,checkoutservice,(aucun log d'erreur),0,0.3,checkoutservice,1,checkoutservice,1,2.8,42.0
+OB-checkoutservice_disk-1,disk,checkoutservice,(aucun log d'erreur),0,0.9,emailservice,0,checkoutservice,1,2.5,30.0
+OB-checkoutservice_disk-2,disk,checkoutservice,(aucun log d'erreur),0,0.5,checkoutservice,1,checkoutservice,1,3.9,28.0
+OB-checkoutservice_disk-3,disk,checkoutservice,(aucun log d'erreur),0,0.5,checkoutservice,1,checkoutservice,1,1.5,15.0
+OB-checkoutservice_loss-1,loss,checkoutservice,frontend,0,0.3,checkoutservice,1,checkoutservice,1,1.7,46.0
+OB-checkoutservice_loss-2,loss,checkoutservice,(aucun log d'erreur),0,1.1,checkoutservice,1,checkoutservice,1,3.0,2.0
+OB-checkoutservice_loss-3,loss,checkoutservice,frontend,0,0.4,checkoutservice,1,checkoutservice,1,2.4,1.0
+OB-checkoutservice_mem-1,mem,checkoutservice,(aucun log d'erreur),0,1.3,checkoutservice,1,checkoutservice,1,3.7,50.0
+OB-checkoutservice_mem-2,mem,checkoutservice,frontend,0,0.5,checkoutservice,1,checkoutservice,1,1.4,17.0
+OB-checkoutservice_mem-3,mem,checkoutservice,(aucun log d'erreur),0,0.6,checkoutservice,1,checkoutservice,1,2.0,56.0
+OB-checkoutservice_socket-1,socket,checkoutservice,(aucun log d'erreur),0,1.0,productcatalogservice,0,productcatalogservice,0,1.3,647.0
+OB-checkoutservice_socket-2,socket,checkoutservice,(aucun log d'erreur),0,0.4,paymentservice,0,paymentservice,0,8.3,95.0
+OB-checkoutservice_socket-3,socket,checkoutservice,(aucun log d'erreur),0,1.5,recommendationservice,0,emailservice,0,4.6,51.0
+OB-currencyservice_cpu-1,cpu,currencyservice,(aucun log d'erreur),0,1.7,currencyservice,1,currencyservice,1,6.4,
+OB-currencyservice_cpu-2,cpu,currencyservice,(aucun log d'erreur),0,2.4,currencyservice,1,checkoutservice,0,5.7,484.0
+OB-currencyservice_cpu-3,cpu,currencyservice,(aucun log d'erreur),0,1.7,currencyservice,1,currencyservice,1,5.6,362.0
+OB-currencyservice_delay-1,delay,currencyservice,(aucun log d'erreur),0,1.0,frontendservice,0,currencyservice,1,8.9,52.0
+OB-currencyservice_delay-2,delay,currencyservice,(aucun log d'erreur),0,1.2,checkoutservice,0,currencyservice,1,9.4,43.0
+OB-currencyservice_delay-3,delay,currencyservice,(aucun log d'erreur),0,1.3,checkoutservice,0,currencyservice,1,3.5,24.0
+OB-currencyservice_disk-1,disk,currencyservice,(aucun log d'erreur),0,1.7,frontendservice,0,currencyservice,1,5.1,
+OB-currencyservice_disk-2,disk,currencyservice,(aucun log d'erreur),0,1.6,frontendservice,0,currencyservice,1,4.3,
+OB-currencyservice_disk-3,disk,currencyservice,(aucun log d'erreur),0,1.2,frontendservice,0,currencyservice,1,5.6,13.0
+OB-currencyservice_loss-1,loss,currencyservice,frontend,0,1.0,frontendservice,0,currencyservice,1,2.0,1.0
+OB-currencyservice_loss-2,loss,currencyservice,(aucun log d'erreur),0,0.6,frontendservice,0,currencyservice,1,2.8,11.0
+OB-currencyservice_loss-3,loss,currencyservice,frontend,0,1.1,frontendservice,0,currencyservice,1,2.8,18.0
+OB-currencyservice_mem-1,mem,currencyservice,(aucun log d'erreur),0,0.8,frontendservice,0,currencyservice,1,3.4,
+OB-currencyservice_mem-2,mem,currencyservice,frontend,0,1.1,frontendservice,0,currencyservice,1,3.6,49.0
+OB-currencyservice_mem-3,mem,currencyservice,frontend,0,1.1,frontendservice,0,currencyservice,1,3.0,37.0
+OB-currencyservice_socket-1,socket,currencyservice,(aucun log d'erreur),0,0.8,paymentservice,0,paymentservice,0,3.4,299.0
+OB-currencyservice_socket-2,socket,currencyservice,(aucun log d'erreur),0,0.4,frontendservice,0,frontendservice,0,3.4,21.0
+OB-currencyservice_socket-3,socket,currencyservice,(aucun log d'erreur),0,0.6,frontendservice,0,currencyservice,1,2.4,1.0
+OB-emailservice_cpu-1,cpu,emailservice,(aucun log d'erreur),0,1.0,emailservice,1,emailservice,1,9.8,495.0
+OB-emailservice_cpu-2,cpu,emailservice,(aucun log d'erreur),0,0.9,emailservice,1,emailservice,1,2.4,2.0
+OB-emailservice_cpu-3,cpu,emailservice,(aucun log d'erreur),0,0.7,emailservice,1,emailservice,1,4.4,9.0
+OB-emailservice_delay-1,delay,emailservice,(aucun log d'erreur),0,1.9,checkoutservice,0,emailservice,1,3.3,6.0
+OB-emailservice_delay-2,delay,emailservice,(aucun log d'erreur),0,1.0,checkoutservice,0,emailservice,1,7.7,22.0
+OB-emailservice_delay-3,delay,emailservice,(aucun log d'erreur),0,2.9,checkoutservice,0,emailservice,1,5.2,39.0
+OB-emailservice_disk-1,disk,emailservice,(aucun log d'erreur),0,0.9,emailservice,1,emailservice,1,5.1,5.0
+OB-emailservice_disk-2,disk,emailservice,(aucun log d'erreur),0,1.0,emailservice,1,emailservice,1,4.1,4.0
+OB-emailservice_disk-3,disk,emailservice,(aucun log d'erreur),0,0.9,emailservice,1,emailservice,1,3.2,126.0
+OB-emailservice_loss-1,loss,emailservice,(aucun log d'erreur),0,1.5,checkoutservice,0,emailservice,1,2.4,12.0
+OB-emailservice_loss-2,loss,emailservice,(aucun log d'erreur),0,0.4,checkoutservice,0,emailservice,1,3.4,6.0
+OB-emailservice_loss-3,loss,emailservice,(aucun log d'erreur),0,0.7,checkoutservice,0,emailservice,1,4.6,13.0
+OB-emailservice_mem-1,mem,emailservice,(aucun log d'erreur),0,0.8,emailservice,1,emailservice,1,10.0,45.0
+OB-emailservice_mem-2,mem,emailservice,(aucun log d'erreur),0,4.0,emailservice,1,emailservice,1,11.4,5.0
+OB-emailservice_mem-3,mem,emailservice,(aucun log d'erreur),0,2.1,emailservice,1,emailservice,1,6.0,2.0
+OB-emailservice_socket-1,socket,emailservice,(aucun log d'erreur),0,0.9,emailservice,1,emailservice,1,7.6,0.0
+OB-emailservice_socket-2,socket,emailservice,(aucun log d'erreur),0,1.8,emailservice,1,emailservice,1,3.8,25.0
+OB-emailservice_socket-3,socket,emailservice,(aucun log d'erreur),0,1.6,recommendationservice,0,productcatalogservice,0,3.1,
+OB-productcatalogservice_cpu-1,cpu,productcatalogservice,(aucun log d'erreur),0,1.2,productcatalogservice,1,productcatalogservice,1,3.7,22.0
+OB-productcatalogservice_cpu-2,cpu,productcatalogservice,(aucun log d'erreur),0,0.9,recommendationservice,0,productcatalogservice,1,5.2,
+OB-productcatalogservice_cpu-3,cpu,productcatalogservice,(aucun log d'erreur),0,1.0,recommendationservice,0,productcatalogservice,1,3.8,22.0
+OB-productcatalogservice_delay-1,delay,productcatalogservice,(aucun log d'erreur),0,0.4,productcatalogservice,1,productcatalogservice,1,1.9,58.0
+OB-productcatalogservice_delay-2,delay,productcatalogservice,(aucun log d'erreur),0,1.7,productcatalogservice,1,productcatalogservice,1,4.6,36.0
+OB-productcatalogservice_delay-3,delay,productcatalogservice,(aucun log d'erreur),0,1.3,productcatalogservice,1,productcatalogservice,1,3.1,29.0
+OB-productcatalogservice_disk-1,disk,productcatalogservice,(aucun log d'erreur),0,1.1,productcatalogservice,1,productcatalogservice,1,2.4,19.0
+OB-productcatalogservice_disk-2,disk,productcatalogservice,(aucun log d'erreur),0,0.7,recommendationservice,0,productcatalogservice,1,3.7,11.0
+OB-productcatalogservice_disk-3,disk,productcatalogservice,(aucun log d'erreur),0,0.6,recommendationservice,0,recommendationservice,0,4.3,32.0
+OB-productcatalogservice_loss-1,loss,productcatalogservice,frontend,0,2.2,productcatalogservice,1,recommendationservice,0,8.6,30.0
+OB-productcatalogservice_loss-2,loss,productcatalogservice,frontend,0,2.1,productcatalogservice,1,recommendationservice,0,4.4,34.0
+OB-productcatalogservice_loss-3,loss,productcatalogservice,frontend,0,0.7,productcatalogservice,1,recommendationservice,0,4.0,17.0
+OB-productcatalogservice_mem-1,mem,productcatalogservice,(aucun log d'erreur),0,3.3,recommendationservice,0,recommendationservice,0,4.4,56.0
+OB-productcatalogservice_mem-2,mem,productcatalogservice,frontend,0,1.3,recommendationservice,0,productcatalogservice,1,2.9,9.0
+OB-productcatalogservice_mem-3,mem,productcatalogservice,frontend,0,1.1,recommendationservice,0,productcatalogservice,1,3.2,28.0
+OB-productcatalogservice_socket-1,socket,productcatalogservice,(aucun log d'erreur),0,0.7,recommendationservice,0,productcatalogservice,1,3.1,53.0
+OB-productcatalogservice_socket-2,socket,productcatalogservice,(aucun log d'erreur),0,0.4,emailservice,0,emailservice,0,2.5,
+OB-productcatalogservice_socket-3,socket,productcatalogservice,(aucun log d'erreur),0,0.7,productcatalogservice,1,currencyservice,0,3.4,
+OB-recommendationservice_cpu-1,cpu,recommendationservice,(aucun log d'erreur),0,0.5,recommendationservice,1,recommendationservice,1,1.9,25.0
+OB-recommendationservice_cpu-2,cpu,recommendationservice,(aucun log d'erreur),0,0.6,recommendationservice,1,recommendationservice,1,2.4,388.0
+OB-recommendationservice_cpu-3,cpu,recommendationservice,(aucun log d'erreur),0,0.7,recommendationservice,1,recommendationservice,1,3.2,3.0
+OB-recommendationservice_delay-1,delay,recommendationservice,(aucun log d'erreur),0,0.6,recommendationservice,1,recommendationservice,1,2.6,37.0
+OB-recommendationservice_delay-2,delay,recommendationservice,(aucun log d'erreur),0,0.6,recommendationservice,1,recommendationservice,1,3.7,15.0
+OB-recommendationservice_delay-3,delay,recommendationservice,(aucun log d'erreur),0,0.9,recommendationservice,1,recommendationservice,1,2.6,2.0
+OB-recommendationservice_disk-1,disk,recommendationservice,(aucun log d'erreur),0,0.7,recommendationservice,1,recommendationservice,1,3.6,22.0
+OB-recommendationservice_disk-2,disk,recommendationservice,(aucun log d'erreur),0,1.0,recommendationservice,1,recommendationservice,1,3.4,1.0
+OB-recommendationservice_disk-3,disk,recommendationservice,(aucun log d'erreur),0,1.2,recommendationservice,1,recommendationservice,1,2.7,46.0
+OB-recommendationservice_loss-1,loss,recommendationservice,frontend,0,0.4,recommendationservice,1,productcatalogservice,0,2.0,51.0
+OB-recommendationservice_loss-2,loss,recommendationservice,frontend,0,1.1,recommendationservice,1,recommendationservice,1,3.3,1.0
+OB-recommendationservice_loss-3,loss,recommendationservice,frontend,0,0.7,recommendationservice,1,recommendationservice,1,3.2,52.0
+OB-recommendationservice_mem-1,mem,recommendationservice,(aucun log d'erreur),0,2.2,recommendationservice,1,recommendationservice,1,2.4,52.0
+OB-recommendationservice_mem-2,mem,recommendationservice,(aucun log d'erreur),0,1.0,recommendationservice,1,recommendationservice,1,2.4,32.0
+OB-recommendationservice_mem-3,mem,recommendationservice,(aucun log d'erreur),0,0.7,recommendationservice,1,recommendationservice,1,3.0,13.0
+OB-recommendationservice_socket-1,socket,recommendationservice,(aucun log d'erreur),0,0.6,recommendationservice,1,recommendationservice,1,2.6,
+OB-recommendationservice_socket-2,socket,recommendationservice,(aucun log d'erreur),0,0.7,frontendservice,0,checkoutservice,0,3.8,
+OB-recommendationservice_socket-3,socket,recommendationservice,(aucun log d'erreur),0,0.7,frontendservice,0,productcatalogservice,0,4.8,
