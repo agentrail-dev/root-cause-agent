@@ -245,6 +245,7 @@ def list_cases() -> list[dict]:
 
 
 LIVE = "LIVE"
+LIVE_INCIDENT_SCORE = 1.5  # services sains : score ~1.0-1.1 ; une panne x3 dépasse 1.5 en < 1 min
 _live_cache = {"t": 0.0, "v": False}
 
 
@@ -283,7 +284,8 @@ def _utcnow() -> datetime:
 
 
 def live_health() -> list[dict]:
-    """Santé des services en direct : le watchdog compare les 90 dernières secondes à tout ce qui précède les 3 dernières minutes."""
+    """Santé des services en direct : le watchdog compare les 90 dernières secondes à la période [-20 min, -5 min]
+    (arrêtée 5 min avant maintenant pour qu'une panne récente ne contamine pas la référence)."""
     b0, b1, a0, a1 = case_periods(LIVE)
     osc = _opensearch()
     ranked = score_services(_op_stats(osc, LIVE, b0, b1), _op_stats(osc, LIVE, a0, a1), min_spans=20, error_signal=True)
@@ -297,7 +299,7 @@ def live_health() -> list[dict]:
         n, e = rows.get(r["service"], (0, 0))
         out.append({"service": r["service"], "recent_error_rate": round(e / n, 4) if n else 0.0, "baseline_error_rate": 0.0,
                     "recent_requests": int(n), "score": r["score"],
-                    "status": "incident" if top and r["service"] == top["service"] and r["score"] >= 2.0 else "healthy"})
+                    "status": "incident" if top and r["service"] == top["service"] and r["score"] >= LIVE_INCIDENT_SCORE else "healthy"})
     return sorted(out, key=lambda r: (r["status"] != "incident", -r["score"]))
 
 
@@ -317,7 +319,7 @@ def case_periods(case_id: str):
     """Fenêtre du cas découpée en tiers : référence = 1er tiers, incident = dernier tiers."""
     if case_id == LIVE:
         now = _utcnow()
-        return now - timedelta(minutes=20), now - timedelta(minutes=3), now - timedelta(seconds=90), now
+        return now - timedelta(minutes=20), now - timedelta(minutes=5), now - timedelta(seconds=90), now
     info = case_info(case_id)
     cs, ce = datetime.fromisoformat(info["start_ts"]), datetime.fromisoformat(info["end_ts"])
     third = (ce - cs) / 3
@@ -449,7 +451,8 @@ def case_root_cause_spans(case_id: str) -> dict:
     top_op = top["top_operations"][0]  # série du signal le plus net, pas la moyenne de tout le service
     hist = osc.search(index=SPAN_INDEX, body={"size": 0, "query": {"bool": {"filter": [
         {"term": {"caseId": case_id}}, {"term": {"serviceName": top_op["emitter"]}},
-        {"term": {"operationName": top_op["operation"]}}]}},
+        {"term": {"operationName": top_op["operation"]}},
+        {"range": {"startTime": {"gte": _ms(b0), "lt": _ms(a1)}}}]}},  # borné à la fenêtre (pas d'ancien historique)
         "aggs": {"m": {"date_histogram": {"field": "startTime", "fixed_interval": "1m"},
                        "aggs": {"avg": {"avg": {"field": "durationInNanos"}}}}}})["aggregations"]["m"]["buckets"]
     series = [(datetime.fromtimestamp(b["key"] / 1000, timezone.utc).replace(tzinfo=None), (b["avg"]["value"] or 0) / 1e6)
