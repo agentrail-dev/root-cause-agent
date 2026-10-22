@@ -9,7 +9,7 @@ const STEPS = [
   ["synthesize", "Je rédige la cause racine"],
 ];
 const state = { services: [], details: {}, thread: [], run: null, history: [], alerts: [], wd: null, alertsErr: null,
-  alertOpen: new Set(), bench: { cases: null, casesErr: null, rows: {}, running: false, done: false, err: null, limit: "", llm: false } };
+  alertOpen: new Set(), fresh: new Map(), justResolved: new Map(), flash: new Map(), seenAlerts: null, alertResolved: new Map(), prevStatus: null, prevOpenN: null, bumpAt: 0, lastOk: null, svcFail: false, alFail: false, bench: { cases: null, casesErr: null, rows: {}, running: false, done: false, err: null, limit: "", llm: false } };
 const sorted = () => [...state.services].sort((a, b) => (b.status === "incident") - (a.status === "incident"));
 const openInc = () => state.services.filter((s) => s.status === "incident");
 const bold = (t) => `<b>${esc(t)}</b>`;
@@ -103,6 +103,9 @@ function renderChips() {
 const hash = () => decodeURIComponent(location.hash.replace(/^#\/?/, ""));
 const view = () => { const h = hash(); return h === "alerts" || h === "benchmark" ? h : h.startsWith("service/") ? "service" : "home"; };
 const route = () => (hash().startsWith("service/") ? hash().slice(8) : "");
+// Animations reprenables : on passe l'âge de l'événement pour que le re-rendu ne rejoue pas l'animation depuis le début.
+const ageOf = (m, id, ttl) => { const t = m.get(id); if (!t) return null; const a = Date.now() - t; if (a > ttl) { m.delete(id); return null; } return a; };
+const ageStyle = (a) => (a === null ? "" : ` style="--age:-${a}ms"`);
 const utc = (t) => (t ? new Date(t.replace(" ", "T") + "Z") : null);
 const dur = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? s + " s" : s < 3600 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1).replace(".", ",") + " h"; };
 const ago = (t) => (t ? "il y a " + dur(Date.now() - utc(t)) : "—");
@@ -113,10 +116,15 @@ function renderSide() {
   $("#nav-home").classList.toggle("sel", v === "home");
   $("#nav-alerts").classList.toggle("sel", v === "alerts");
   $("#nav-bench").classList.toggle("sel", v === "benchmark");
-  $("#alert-badge").textContent = openN || ""; $("#alert-badge").hidden = !openN;
+  if (state.prevOpenN !== null && openN > state.prevOpenN) state.bumpAt = Date.now();
+  state.prevOpenN = openN;
+  const bump = Date.now() - state.bumpAt < 700, ab = $("#alert-badge");
+  ab.textContent = openN || ""; ab.hidden = !openN; ab.classList.toggle("bump", bump);
+  ab.style.setProperty("--age", bump ? `-${Date.now() - state.bumpAt}ms` : "0s");
   $("#nav").innerHTML = sorted().map((s) => {
     const crit = s.status === "incident";
-    return `<a class="svc ${s.service === cur ? "sel" : ""}" href="#/service/${encodeURIComponent(s.service)}"><i class="dot ${crit ? "crit" : ""}"></i><span class="svc-name">${esc(s.service)}</span>
+    const fl = ageOf(state.flash, s.service, 1500);
+    return `<a class="svc ${s.service === cur ? "sel" : ""} ${fl !== null ? "flash" : ""}"${ageStyle(fl)} href="#/service/${encodeURIComponent(s.service)}"><i class="dot ${crit ? "crit" : ""}"></i><span class="svc-name">${esc(s.service)}</span>
       <span class="svc-rate ${crit ? "crit" : ""}">${pct(s.recent_error_rate, crit ? 0 : 1)}</span></a>`;
   }).join("");
   // Durées réelles : diagnostics automatiques du watchdog (/alerts) + diagnostics lancés à la main dans cet onglet.
@@ -178,7 +186,8 @@ function overview() {
     <div class="sec-t"><h2>Services</h2><span>Cliquez sur un service pour le détail</span></div>
     <div class="cards">${sv.map((s) => {
       const crit = s.status === "incident", r = ratio(s);
-      return `<a class="scard ${crit ? "crit" : ""}" href="#/service/${encodeURIComponent(s.service)}">
+      const fl = ageOf(state.flash, s.service, 1500);
+      return `<a class="scard ${crit ? "crit" : ""} ${fl !== null ? "flash" : ""}"${ageStyle(fl)} href="#/service/${encodeURIComponent(s.service)}">
         <div class="scard-h"><b>${esc(s.service)}</b><span class="badge ${crit ? "crit" : "ok"}">${crit ? "Incident" : "Sain"}</span></div>
         <div class="scard-m"><div><div class="big ${crit ? "crit" : ""}">${pct(s.recent_error_rate, crit ? 0 : 1)}</div>
           <div class="sub">erreurs 5xx${s.baseline_error_rate ? " · normal " + pct(s.baseline_error_rate, 1) : ""}</div></div>${spark(state.details[s.service], crit)}</div>
@@ -245,8 +254,9 @@ function alertCard(a) {
   const open = !a.resolved_at, rc = a.root_cause, m = a.metrics, steps = rc.next_steps || [];
   const isOpen = state.alertOpen.has(a.id) || (open && !state.alertSeen?.has(a.id));
   const when = open ? `ouverte ${ago(a.opened_at)}` : `résolue après ${dur(utc(a.resolved_at) - utc(a.opened_at))}`;
-  return `<article class="alert ${open ? "open" : ""}">
-    <div class="alert-h"><span class="badge ${open ? "crit" : "ok"}">${open ? "Ouvert" : "Résolu"}</span>
+  const fa = ageOf(state.fresh, a.id, 6000), ra = ageOf(state.justResolved, a.id, 3000);
+  return `<article class="alert ${open ? "open" : ""} ${fa !== null ? "fresh" : ""} ${ra !== null ? "resolved-now" : ""}"${ageStyle(fa ?? ra)}>
+    <div class="alert-h"><span class="badge ${open ? "crit" : "ok"}">${open ? "Ouvert" : "Résolu"}</span>${fa !== null ? `<span class="new-tag">Nouveau</span>` : ""}
       <a class="alert-svc" href="#/service/${encodeURIComponent(a.service)}">${esc(a.service)}</a>
       <span class="hint">${when}${a.error_rate > 0 ? " · " + pct(a.error_rate) + " d'erreurs 5xx" : ""}</span>
       ${a.notified ? `<span class="chip-s">Notification envoyée</span>` : ""}</div>
@@ -338,7 +348,14 @@ async function loadAlerts() {
     const [a, w] = await Promise.all([fetch("/alerts"), fetch("/watchdog/status")]);
     if (!a.ok || !w.ok) throw new Error("HTTP " + (a.ok ? w.status : a.status));
     state.alerts = (await a.json()).alerts; state.wd = await w.json(); state.alertsErr = null;
-  } catch (e) { state.alertsErr = e.message; }
+    if (state.seenAlerts) state.alerts.forEach((x) => {  // rien d'animé au premier chargement
+      if (!state.seenAlerts.has(x.id)) state.fresh.set(x.id, Date.now());
+      if (state.alertResolved.get(x.id) === false && x.resolved_at) state.justResolved.set(x.id, Date.now());
+    });
+    state.seenAlerts = new Set(state.alerts.map((x) => x.id));
+    state.alertResolved = new Map(state.alerts.map((x) => [x.id, !!x.resolved_at]));
+    state.alFail = false; liveOk();
+  } catch (e) { state.alertsErr = e.message; state.alFail = true; renderLive(); }
   renderSide();
   if (["alerts", "home"].includes(view())) renderDash();
 }
@@ -358,14 +375,24 @@ async function loadDetail(name) {
   try { const r = await fetch("/services/" + encodeURIComponent(name)); if (r.ok) state.details[name] = await r.json(); } catch {}
 }
 
+function liveOk() { state.lastOk = Date.now(); renderLive(); const c = $("#conn"); c.classList.add("tick"); setTimeout(() => c.classList.remove("tick"), 250); }
+function renderLive() {
+  const c = $("#conn"), off = state.svcFail || state.alFail, age = state.lastOk ? Math.round((Date.now() - state.lastOk) / 1000) : null;
+  c.className = "live " + (off ? "ko" : state.lastOk ? "ok" : "") + (c.classList.contains("tick") ? " tick" : "");
+  c.lastElementChild.textContent = off ? `Hors ligne${age !== null ? " · dernière mise à jour il y a " + age + " s" : ""}` : age === null ? "Connexion…" : `En direct · mis à jour il y a ${age} s`;
+}
+setInterval(renderLive, 1000);
+
 async function loadServices() {
-  const conn = $("#conn");
   try {
     const r = await fetch("/incidents");
     if (!r.ok) throw new Error(r.status);
     state.services = (await r.json()).services;
-    conn.className = "live ok"; conn.lastElementChild.textContent = "Données en direct";
-  } catch { conn.className = "live ko"; conn.lastElementChild.textContent = "Backend injoignable"; }
+    const prev = state.prevStatus;
+    state.prevStatus = Object.fromEntries(state.services.map((x) => [x.service, x.status]));
+    if (prev) state.services.forEach((x) => { if (prev[x.service] && prev[x.service] !== x.status) state.flash.set(x.service, Date.now()); });
+    state.svcFail = false; liveOk();
+  } catch { state.svcFail = true; renderLive(); }
   renderSide(); renderDash();
   await Promise.all(state.services.map((x) => loadDetail(x.service)));
   renderDash();

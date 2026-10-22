@@ -258,3 +258,26 @@ svg.chart text{font-size:14px!important}
 nav{overflow-x:hidden}.svc{min-width:0}
 .page.enter{animation:in .25s ease-out}
 .side-t{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.side-empty{font-size:12px;color:var(--muted);line-height:1.45}
+
+/* micro-animations (courtes, ease-out, sans décalage de mise en page) */
+.badge{transition:color .3s,background-color .3s,border-color .3s}
+.live i{transition:transform .2s ease-out}
+.live.tick i{transform:scale(1.8)}
+@keyframes slidein{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+@keyframes halo{0%{box-shadow:0 0 0 0 rgba(255,92,99,.6)}100%{box-shadow:0 0 0 14px rgba(255,92,99,0)}}
+@keyframes greenfade{from{background-color:rgba(61,220,151,.18)}to{background-color:var(--panel)}}
+@keyframes pop{0%{transform:scale(.6)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes flash{0%{box-shadow:0 0 0 0 rgba(124,131,255,.6)}100%{box-shadow:0 0 0 12px rgba(124,131,255,0)}}
+@keyframes tagout{to{opacity:0;transform:scale(.8)}}
+@keyframes livepulse{0%,100%{box-shadow:0 0 0 0 rgba(61,220,151,.45)}50%{box-shadow:0 0 0 5px rgba(61,220,151,0)}}
+.new-tag{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--crit);color:#fff;border-radius:99px;padding:1px 8px}
+@media (prefers-reduced-motion:no-preference){
+  .alert.fresh{animation:slidein .35s ease-out var(--age,0s) both,halo 2s ease-out var(--age,0s) both}
+  .alert.fresh .new-tag{animation:tagout .4s ease-in calc(5.6s + var(--age,0s)) forwards}
+  .alert.resolved-now{animation:greenfade 3s ease-out var(--age,0s) both}
+  .alert.resolved-now .badge.ok{animation:pop .4s ease-out var(--age,0s) both}
+  .scard.flash,.svc.flash{animation:flash 1.2s ease-out var(--age,0s) both}
+  .nbadge.bump{animation:pop .5s ease-out var(--age,0s) both}
+  .live.ok i{animation:livepulse 2.4s ease-in-out infinite}
+}
+@media (prefers-reduced-motion:reduce){.new-tag{display:none}}
