@@ -1,15 +1,10 @@
-# Dev local : deux conteneurs séparés (l'image unique du Dockerfile sert à Aiven Runtime).
+# Un seul conteneur : FastAPI (127.0.0.1:8000, interne) + Streamlit (8501, exposé).
+# Les secrets (CLICKHOUSE_URL, OPENSEARCH_URL, POSTGRES_URL, ANTHROPIC_API_KEY) viennent
+# de .env en local, ou des variables d'environnement configurées dans la console Aiven.
 services:
-  api:
+  app:
     build: .
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
-    env_file: .env
-    ports: ["8000:8000"]
-  frontend:
-    build: .
-    command: streamlit run frontend/app.py --server.port=8501 --server.address=0.0.0.0
-    env_file: .env
-    environment:
-      BACKEND_URL: http://api:8000
+    env_file:
+      - path: .env
+        required: false
     ports: ["8501:8501"]
-    depends_on: [api]
