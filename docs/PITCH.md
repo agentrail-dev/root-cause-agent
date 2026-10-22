@@ -1,5 +1,7 @@
 # Root Cause Agent — 3-minute pitch (AgentRail)
 
+**One line:** Root Cause Agent is an AI watchdog for production: it watches your logs, traces and orders on Aiven around the clock and, the moment a service degrades, names the faulty service on its own, with evidence and business impact.
+
 Sources for every number: `results/benchmark.md` and `COORDINATION.md`. Nothing else is quoted.
 
 ## 1. The customer problem (0:00–0:30)

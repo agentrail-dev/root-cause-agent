@@ -1,5 +1,7 @@
 # Root Cause Agent
 
+> **Le watchdog IA de votre production : il surveille en continu vos logs, traces et commandes sur Aiven et, dès qu'un service dérape, nomme tout seul le coupable, avec les preuves et l'impact métier.**
+
 Un agent IA qui trouve la cause racine d'un incident de production en **corrélant logs, traces et données métier** stockés dans trois bases managées **Aiven**. Un watchdog surveille en continu : un nouvel incident est diagnostiqué seul, sans que personne ne pose de question.
 
 > Problème client : un ingénieur d'astreinte SRE saute entre un outil de logs, un outil de traces et la base métier pour savoir *quel service* est en cause et *qui est touché*. Hypothèse de travail du pitch : environ 45 minutes par incident (hypothèse, pas une mesure).
