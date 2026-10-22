@@ -159,7 +159,7 @@ function overview() {
   const errs = sv.reduce((a, s) => a + s.recent_requests * s.recent_error_rate, 0);
   const g = reqs ? errs / reqs : 0;
   return `<div class="page">
-    <div class="page-h"><div><h1>Vue d'ensemble</h1><p>Santé de la production sur les 10 dernières minutes.</p></div></div>
+    <div class="page-h"><div><h1>Vue d'ensemble</h1><p>Santé de la production, mise à jour automatiquement.</p></div></div>
     ${inc.map((s) => `<div class="banner"><i class="dot crit"></i><div><b>${esc(s.service)}</b> est en incident : ${pct(s.recent_error_rate)} d'erreurs 5xx${vsNormal(s) ? ", " + vsNormal(s) : ""}.</div>
       <button class="btn" data-inv="${esc(s.service)}">Investiguer avec l'agent</button></div>`).join("")}
     ${journey()}
@@ -167,7 +167,7 @@ function overview() {
       <div><div class="k">Services surveillés</div><div class="v">${sv.length}</div><div class="sub">${sv.length - inc.length} sains</div></div>
       <div><div class="k">Incidents ouverts</div><div class="v ${inc.length ? "crit" : "ok"}">${inc.length}</div><div class="sub">${inc.length ? "Action requise" : "Tout va bien"}</div></div>
       <div><div class="k">Erreurs 5xx globales</div><div class="v ${g > 0.05 ? "crit" : ""}">${pct(g, 1)}</div><div class="sub">pondéré par le trafic</div></div>
-      <div><div class="k">Requêtes</div><div class="v">${reqs}<small>/ 10 min</small></div><div class="sub">tous services</div></div>
+      <div><div class="k">Requêtes</div><div class="v">${reqs}<small>récentes</small></div><div class="sub">tous services</div></div>
     </div>
     <div class="sec-t"><h2>Services</h2><span>Cliquez sur un service pour le détail</span></div>
     <div class="cards">${sv.map((s) => {
@@ -175,8 +175,8 @@ function overview() {
       return `<a class="scard ${crit ? "crit" : ""}" href="#/service/${encodeURIComponent(s.service)}">
         <div class="scard-h"><b>${esc(s.service)}</b><span class="badge ${crit ? "crit" : "ok"}">${crit ? "Incident" : "Sain"}</span></div>
         <div class="scard-m"><div><div class="big ${crit ? "crit" : ""}">${pct(s.recent_error_rate, crit ? 0 : 1)}</div>
-          <div class="sub">erreurs 5xx · normal ${pct(s.baseline_error_rate, 1)}</div></div>${spark(state.details[s.service], crit)}</div>
-        <div class="scard-f"><span>${esc(s.recent_requests)} req / 10 min${crit && vsNormal(s) ? " · " + vsNormal(s).replace("par rapport au normal", "vs normal") : ""}</span>
+          <div class="sub">erreurs 5xx${s.baseline_error_rate ? " · normal " + pct(s.baseline_error_rate, 1) : ""}</div></div>${spark(state.details[s.service], crit)}</div>
+        <div class="scard-f"><span>${esc(s.recent_requests)} requêtes récentes${crit && vsNormal(s) ? " · " + vsNormal(s).replace("par rapport au normal", "vs normal") : ""}</span>
           <span class="link">Détail →</span></div></a>`;
     }).join("")}</div></div>`;
 }
@@ -192,8 +192,8 @@ function servicePage(name) {
       <button class="btn ${crit ? "" : "ghost"}" data-inv="${esc(name)}">${last ? "Relancer l'agent" : "Investiguer avec l'agent"}</button></div></div>
     <div class="kpis">
       <div><div class="k">Erreurs 5xx</div><div class="v ${crit ? "crit" : "ok"}">${pct(s.recent_error_rate, crit ? 0 : 1)}</div></div>
-      <div><div class="k">Niveau normal</div><div class="v">${pct(s.baseline_error_rate, 1)}</div></div>
-      <div><div class="k">Requêtes</div><div class="v">${esc(s.recent_requests)}<small>/ 10 min</small></div></div>
+      <div><div class="k">Niveau normal</div><div class="v">${s.baseline_error_rate ? pct(s.baseline_error_rate, 1) : "—"}</div></div>
+      <div><div class="k">Requêtes</div><div class="v">${esc(s.recent_requests)}<small>récentes</small></div></div>
       <div><div class="k">Écart au normal</div><div class="v ${crit ? "crit" : ""}">${r ? "×" + r.toFixed(1).replace(".", ",") : "—"}</div></div></div>
     ${last ? `<div class="card"><div class="card-h"><h2>Dernier diagnostic de l'agent</h2><span>${esc(last.metrics.diagnosis_seconds)} s</span></div><div class="card-b diag">
       <div class="comp">${esc(last.root_cause.faulty_component)}</div><p style="color:var(--soft)">${esc(last.root_cause.summary)}</p>
@@ -258,7 +258,7 @@ function alertsPage() {
   const list = state.alerts;
   return `<div class="page"><div class="page-h"><div><h1>Alertes</h1><p>Incidents détectés et diagnostiqués automatiquement par le watchdog, du plus récent au plus ancien.</p></div></div>
     ${watchdogCard()}
-    <div class="sec-t"><h2>Fil d'alertes</h2><span>${list.length} alerte${list.length > 1 ? "s" : ""} · ${list.filter((a) => !a.resolved_at).length} ouverte(s) · actualisé automatiquement</span></div>
+    <div class="sec-t"><h2>Fil d'alertes</h2><span>${list.length} alerte${list.length > 1 ? "s" : ""}${list.length ? " dont " + list.filter((a) => !a.resolved_at).length + " ouverte" + (list.filter((a) => !a.resolved_at).length > 1 ? "s" : "") : ""} · actualisé automatiquement</span></div>
     ${list.length ? list.map(alertCard).join("") : `<div class="idle"><div><h3>Aucune alerte pour l'instant</h3><p>${state.wd?.running ? "Tout est calme : le watchdog n'a détecté aucun incident." : "Activez le watchdog, ou forcez un cycle pour lancer une détection maintenant."}</p></div></div>`}</div>`;
 }
 
