@@ -1,0 +1,4 @@
+{"operations": [
+ {"operation": "db.query.orders", "slow_spans": 1310, "error_count": 1250, "p99_ms": 4200},
+ {"operation": "http.post.charge", "slow_spans": 40, "error_count": 12, "p99_ms": 2300}],
+ "faulty_operation": "db.query.orders", "error_count": 1250, "p99_ms": 4200}

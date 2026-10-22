@@ -1,0 +1,199 @@
+"""Orchestrateur LangGraph : analyze_question -> detect_anomaly -> find_faulty_span
+-> check_business_impact -> synthesize.
+
+Les appels LLM (extraction de la question, synthèse) sont contraints par un schéma
+Pydantic via tool-use forcé. Sans ANTHROPIC_API_KEY, des heuristiques déterministes
+prennent le relais, de sorte que la démo ne dépend jamais du réseau LLM.
+"""
+import json
+import os
+import re
+import time
+from typing import Iterator
+
+from langgraph.graph import END, START, StateGraph
+
+from . import tools
+from .models import AgentState, QuestionAnalysis, RootCause
+from .prompts import ANALYZE_PROMPT, KNOWN_SERVICES, SYNTHESIZE_PROMPT
+
+STEPS = ["analyze_question", "detect_anomaly", "find_faulty_span", "check_business_impact", "synthesize"]
+STEP_LABELS = {
+    "analyze_question": "Contexte : service et fenêtre",
+    "detect_anomaly": "Quand : taux d'erreur (ClickHouse)",
+    "find_faulty_span": "Où : spans fautifs (OpenSearch)",
+    "check_business_impact": "Impact : commandes (PostgreSQL)",
+    "synthesize": "Conclusion causale",
+}
+
+
+def llm_structured(system: str, user: str, schema):
+    """Appel Claude avec sortie forcée au schéma Pydantic. None si indisponible/échec."""
+    if not os.getenv("ANTHROPIC_API_KEY") or os.getenv("DISABLE_LLM", "").lower() in ("1", "true"):
+        return None
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(timeout=20)
+        resp = client.messages.create(
+            model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
+            max_tokens=1024,
+            system=system + "\n\nRéponds UNIQUEMENT en appelant l'outil `answer`.",
+            messages=[{"role": "user", "content": user}],
+            tools=[{"name": "answer", "description": "Réponse structurée",
+                    "input_schema": schema.model_json_schema()}],
+            tool_choice={"type": "auto"},
+        )
+        block = next(b for b in resp.content if b.type == "tool_use")
+        return schema.model_validate(block.input)
+    except Exception as e:  # réseau, quota, validation : on retombe sur l'heuristique
+        print(f"[llm] fallback heuristique: {e}")
+        return None
+
+
+def _event(step: str, message: str, data: dict | None = None) -> dict:
+    return {"step": step, "status": "done", "message": message, "data": data}
+
+
+def _fmt_ts(ts: str | None) -> str:
+    return ts.split(" ")[-1] if ts else "n/a"
+
+
+# ---------- Nœuds ----------
+def analyze_question(state: AgentState) -> dict:
+    q = state["question"]
+    services = ", ".join(KNOWN_SERVICES)
+    out = llm_structured(ANALYZE_PROMPT.format(services=services), q, QuestionAnalysis)
+    if out is None:
+        low = q.lower()
+        service = next((s for s, kws in KNOWN_SERVICES.items() if s in low or any(k in low for k in kws)),
+                       next(iter(KNOWN_SERVICES)))
+        m = re.search(r"(\d+)\s*(min|h)", low)
+        window = int(m.group(1)) * (60 if m.group(2) == "h" else 1) if m else 60
+        out = QuestionAnalysis(service_name=service, time_window_minutes=window)
+    return {
+        "service_name": out.service_name,
+        "time_window_minutes": out.time_window_minutes,
+        "timeline": [_event("analyze_question",
+                            f"Service cible : {out.service_name}, fenêtre : {out.time_window_minutes} min",
+                            out.model_dump())],
+    }
+
+
+def detect_anomaly(state: AgentState) -> dict:
+    res = tools.clickhouse_error_rate(state["service_name"], state["time_window_minutes"])
+    if not res.get("minutes"):
+        msg = "Aucune donnée de logs sur la fenêtre."
+    else:
+        msg = (f"Début de la dégradation à {_fmt_ts(res.get('onset_minute'))}, "
+               f"pic à {_fmt_ts(res['peak_minute'])} ({res['peak_error_rate']:.0%} d'erreurs 5xx).")
+    return {"error_rate": res, "timeline": [_event("detect_anomaly", msg, res)]}
+
+
+def find_faulty_span(state: AgentState) -> dict:
+    res = tools.opensearch_slow_spans(state["service_name"])
+    if not res.get("faulty_operation"):
+        msg = "Aucun span lent trouvé."
+    else:
+        msg = (f"L'opération {res['faulty_operation']} concentre {res['error_count']} erreurs"
+               + (f" (p99 {res['p99_ms']} ms)." if res.get("p99_ms") else "."))
+    return {"slow_spans": res, "timeline": [_event("find_faulty_span", msg, res)]}
+
+
+def check_business_impact(state: AgentState) -> dict:
+    res = tools.postgres_business_impact(max(state["time_window_minutes"], 120))
+    n = res["pending_orders"]
+    msg = f"Impact métier confirmé : {n} commandes bloquées." if n else "Aucun impact métier détecté."
+    return {"business_impact": res, "timeline": [_event("check_business_impact", msg, res)]}
+
+
+def _evidence(state: AgentState) -> list[str]:
+    er, sp, bi = state["error_rate"], state["slow_spans"], state["business_impact"]
+    ev = []
+    if er.get("onset_minute"):
+        ev.append(f"Début de la hausse d'erreurs à {er['onset_minute']}")
+    if er.get("peak_error_rate"):
+        ev.append(f"Pic de {er['peak_error_rate']:.0%} d'erreurs 5xx à {er['peak_minute']}")
+    if sp.get("faulty_operation"):
+        ev.append(f"{sp['error_count']} spans en erreur sur {sp['faulty_operation']}")
+    if sp.get("p99_ms"):
+        ev.append(f"Latence p99 de {sp['p99_ms']} ms sur {sp['faulty_operation']}")
+    if bi.get("pending_orders"):
+        ev.append(f"{bi['pending_orders']} commandes pending")
+    return ev
+
+
+def synthesize(state: AgentState) -> dict:
+    er, sp, bi = state["error_rate"], state["slow_spans"], state["business_impact"]
+    start = er.get("onset_minute") or er.get("peak_minute") or "inconnu"
+    comp = sp.get("faulty_operation") or "inconnu"
+    ev = _evidence(state)
+    payload = json.dumps({"question": state["question"], "service": state["service_name"],
+                          "clickhouse": {k: v for k, v in er.items() if k != "minutes"},
+                          "opensearch": sp, "postgres": bi}, ensure_ascii=False)
+    rc = llm_structured(SYNTHESIZE_PROMPT, payload, RootCause)
+    if rc is None:
+        p99 = f" (p99 {sp['p99_ms']} ms)" if sp.get("p99_ms") else ""
+        rc = RootCause(
+            incident_start=start,
+            faulty_component=comp,
+            evidence=f"{sp.get('error_count', 0)} spans en erreur sur {comp}{p99}",
+            business_impact=f"{bi['pending_orders']} commandes client bloquées en statut pending",
+            summary=(f"À {start}, l'opération {comp} a subi une dégradation{p99} : "
+                     f"{sp.get('error_count', 0)} spans en erreur, {bi['pending_orders']} commandes bloquées."),
+        )
+    return {
+        "root_cause": rc.model_dump(),
+        "evidence_count": len(ev),
+        "timeline": [_event("synthesize", rc.summary, {"evidence": ev})],
+    }
+
+
+def build_graph():
+    g = StateGraph(AgentState)
+    fns = [analyze_question, detect_anomaly, find_faulty_span, check_business_impact, synthesize]
+    for f in fns:
+        g.add_node(f.__name__, f)
+    g.add_edge(START, STEPS[0])
+    for a, b in zip(STEPS, STEPS[1:]):
+        g.add_edge(a, b)
+    g.add_edge(STEPS[-1], END)
+    return g.compile()
+
+
+GRAPH = build_graph()
+HUMAN_BASELINE_SECONDS = 45 * 60
+
+
+def ground_truth_operation() -> str | None:
+    if os.getenv("GROUND_TRUTH_OPERATION"):
+        return os.environ["GROUND_TRUTH_OPERATION"]
+    if tools.demo_mode():
+        return tools._fixture("ground_truth")["operation"]
+    return None
+
+
+def run_stream(question: str) -> Iterator[dict]:
+    """Génère des événements : step_start, step_done, final (avec métriques)."""
+    t0 = time.perf_counter()
+    state: dict = {"question": question, "timeline": []}
+    yield {"type": "step_start", "step": STEPS[0], "label": STEP_LABELS[STEPS[0]]}
+    for update in GRAPH.stream({"question": question, "timeline": []}, stream_mode="updates"):
+        for node, delta in update.items():
+            state.update({k: v for k, v in delta.items() if k != "timeline"})
+            for ev in delta.get("timeline", []):
+                yield {"type": "step_done", "label": STEP_LABELS[node], **ev}
+            i = STEPS.index(node)
+            if i + 1 < len(STEPS):
+                yield {"type": "step_start", "step": STEPS[i + 1], "label": STEP_LABELS[STEPS[i + 1]]}
+    elapsed = time.perf_counter() - t0
+    truth = ground_truth_operation()
+    found = state["root_cause"]["faulty_component"]
+    yield {"type": "final", "root_cause": state["root_cause"], "metrics": {
+        "diagnosis_seconds": round(elapsed, 1),
+        "human_baseline_seconds": HUMAN_BASELINE_SECONDS,
+        "mttr_reduction": round(1 - elapsed / HUMAN_BASELINE_SECONDS, 4),
+        "evidence_count": state["evidence_count"],
+        "accuracy": None if truth is None else (1.0 if found == truth else 0.0),
+        "ground_truth": truth,
+    }}

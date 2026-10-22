@@ -1,0 +1,11 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+streamlit>=1.40
+langgraph>=0.2
+anthropic>=0.40
+pydantic>=2.7
+clickhouse-connect>=0.8
+opensearch-py>=2.6
+psycopg[binary]>=3.2
+requests>=2.32
+pytest>=8.0
