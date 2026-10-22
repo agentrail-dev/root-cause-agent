@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import tools
+from . import tools, watchdog
 from .agent import run_stream
 
 app = FastAPI(title="Root Cause Agent")
@@ -104,6 +104,28 @@ def benchmark(req: BenchmarkRequest):
         yield json.dumps({"type": "done"}) + "\n"
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+@app.on_event("startup")
+def _start_watchdog():
+    watchdog.start()  # actif seulement si WATCHDOG=true
+
+
+@app.get("/alerts")
+def get_alerts():
+    """Alertes créées automatiquement par le watchdog (plus récentes d'abord)."""
+    return {"alerts": watchdog.alerts()}
+
+
+@app.get("/watchdog/status")
+def watchdog_status():
+    return watchdog.status()
+
+
+@app.post("/watchdog/tick")
+def watchdog_tick():
+    """Force un cycle de surveillance (démo / test) sans attendre l'intervalle."""
+    return {"created": [a["id"] for a in watchdog.tick()]}
 
 
 # Le frontend statique doit être monté EN DERNIER : un montage sur « / » masque les routes déclarées après lui.

@@ -66,3 +66,20 @@ def test_score_services_network_fault_blames_callee():
     after = {("frontend", "hipstershop.CurrencyService/Convert"): (100, 40.0, 0), ("currency", "grpc.hipstershop.CurrencyService/Convert"): (100, 0.1, 0),
              ("frontend", "hipstershop.CartService/Get"): (100, 5.1, 0), ("cart", "grpc.hipstershop.CartService/Get"): (100, 0.2, 0)}
     assert tools.score_services(before, after)[0]["service"] == "currency"
+
+
+def test_watchdog_opens_alert_once_and_resolves(monkeypatch):
+    from backend import watchdog
+    watchdog.reset()
+    state = {"status": "incident"}
+    monkeypatch.setattr(watchdog.tools, "services_health", lambda *a, **k: [
+        {"service": "svc-a", "recent_error_rate": 0.4, "status": state["status"]}])
+    calls = []
+    monkeypatch.setattr(watchdog, "diagnose", lambda svc: calls.append(svc) or {
+        "root_cause": {"summary": "s", "business_impact": "i"}, "metrics": {"diagnosis_seconds": 1}, "evidence": []})
+    assert len(watchdog.tick()) == 1          # nouvel incident -> alerte
+    assert watchdog.tick() == []              # déjà ouvert -> pas de doublon
+    assert calls == ["svc-a"]
+    state["status"] = "healthy"
+    watchdog.tick()
+    assert watchdog.alerts()[0]["resolved_at"] and watchdog.status()["open_incidents"] == []
