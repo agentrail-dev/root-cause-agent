@@ -17,6 +17,6 @@ The live part runs on a traffic simulator in the style of OpenTelemetry, not on 
 
 ## Before recording
 
-- Reset to a healthy state first (`python -m scripts.inject_incident --reset`, or the simulator's reset button).
+- Reset to a healthy state first: press **« Tout rétablir »** on the simulator control page, then wait about 3 minutes so the watchdog sees a healthy window and any open alert resolves.
 - Do not run the benchmark live: OpenSearch is shared. Show the stored results.
-- If the live alert is late, cut the wait in editing and keep the "about 75 s" line honest.
+- If the live alert is late, cut the wait in editing and keep the "about 75 s" line honest (it comes from a single measured run, not an average).

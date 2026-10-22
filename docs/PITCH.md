@@ -38,7 +38,7 @@ Benchmark on **90 real, annotated failures** (RCAEval RE2-OB, ground truth known
 - By fault type: delay 100 %, cpu / disk / mem 93 %, loss 73 %, socket 33 %. We say openly that socket is our weak spot.
 - Median error on the failure start time: **25 s** (78 cases with a detected start).
 - Agent diagnosis time: 3.9 s on average.
-- Live: a fault injected on the simulator produces a watchdog alert in **about 75 s**, with the right service and a start time within **19 s**.
+- Live: in the run we measured, a fault injected on the simulator produced a watchdog alert in **about 75 s**, with the right service and a start time within **19 s** (a single run, not an average).
 
 Honesty note: the **live demo runs on a traffic simulator in the style of OpenTelemetry**, not on the real shop. The **benchmark data is real RCAEval data**.
 
