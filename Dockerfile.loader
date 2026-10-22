@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8080
+# Chargement RCAEval -> Aiven, puis le conteneur reste vivant ; progression lisible sur :8080
+CMD ["sh", "-c", "mkdir -p /status && (cd /status && python -m http.server 8080 &) ; python -u -m scripts.load_rcaeval --prefix RE2-OB 2>&1 | tee /status/index.txt ; sleep infinity"]

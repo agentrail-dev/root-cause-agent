@@ -11,11 +11,10 @@ services:
         required: false
     ports: ["8501:8501"]
   loader:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.loader
     env_file:
       - path: .env
         required: false
-    command: >
-      sh -c "mkdir -p /status && (cd /status && python -m http.server 8080 &) ;
-      python -u -m scripts.load_rcaeval --prefix RE2-OB 2>&1 | tee /status/index.txt ; sleep infinity"
     ports: ["8080:8080"]

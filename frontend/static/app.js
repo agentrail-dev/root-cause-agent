@@ -8,7 +8,7 @@ const STEPS = [
   ["find_faulty_span", "Je cherche où ça casse"], ["check_business_impact", "Je mesure l'impact métier"],
   ["synthesize", "Je rédige la cause racine"],
 ];
-const state = { services: [], thread: [], run: null, history: [], greeted: false };
+const state = { services: [], details: {}, thread: [], run: null, history: [] };
 const sorted = () => [...state.services].sort((a, b) => (b.status === "incident") - (a.status === "incident"));
 const openInc = () => state.services.filter((s) => s.status === "incident");
 const bold = (t) => `<b>${esc(t)}</b>`;
@@ -95,20 +95,104 @@ function renderThread() {
 }
 
 function renderChips() {
-  $("#chips").innerHTML = state.run ? "" : openInc().map((s) => `<button class="chip" data-inv="${esc(s.service)}"><i class="dot crit"></i>Investiguer ${esc(s.service)}</button>`).join("");
+  const cur = route(), list = cur ? state.services.filter((x) => x.service === cur) : openInc();
+  $("#chips").innerHTML = state.run ? "" : list.map((s) => `<button class="chip" data-inv="${esc(s.service)}"><i class="dot crit"></i>Investiguer ${esc(s.service)}</button>`).join("");
 }
 
+const route = () => decodeURIComponent((location.hash.match(/^#\/service\/(.+)$/) || [])[1] || "");
+
 function renderSide() {
+  const cur = route();
   $("#svc-count").textContent = state.services.length || "";
+  $("#nav-home").classList.toggle("sel", !cur);
   $("#nav").innerHTML = sorted().map((s) => {
     const crit = s.status === "incident";
-    return `<button class="svc" data-inv="${esc(s.service)}" title="Investiguer ${esc(s.service)}"><i class="dot ${crit ? "crit" : ""}"></i><span class="svc-name">${esc(s.service)}</span>
-      <span class="svc-rate ${crit ? "crit" : ""}">${pct(s.recent_error_rate, crit ? 0 : 1)}</span></button>`;
+    return `<a class="svc ${s.service === cur ? "sel" : ""}" href="#/service/${encodeURIComponent(s.service)}"><i class="dot ${crit ? "crit" : ""}"></i><span class="svc-name">${esc(s.service)}</span>
+      <span class="svc-rate ${crit ? "crit" : ""}">${pct(s.recent_error_rate, crit ? 0 : 1)}</span></a>`;
   }).join("");
   const h = state.history, avg = h.length ? h.reduce((a, b) => a + b, 0) / h.length : null;
-  $("#session").innerHTML = `<div class="mini"><span>Diagnostics</span><b>${h.length}</b></div>
+  $("#session").innerHTML = `<div class="mini"><span>Diagnostics agent</span><b>${h.length}</b></div>
     <div class="mini"><span>Durée moyenne</span><b>${avg !== null ? avg.toFixed(1) + " s" : "—"}</b></div>
     <div class="mini"><span>MTTR économisé</span><b>${avg !== null ? pct(1 - avg / HUMAN_S, 1) : "—"}</b></div>`;
+}
+
+/* ---------- dashboard ---------- */
+const ratio = (s) => (s.baseline_error_rate ? s.recent_error_rate / s.baseline_error_rate : null);
+const lastResult = (svc) => state.thread.filter((m) => m.type === "result" && m.res.service === svc).map((m) => m.res).pop();
+
+function spark(det, crit) {
+  const m = det?.error_rate?.minutes;
+  if (!m || m.length < 2) return "";
+  const W = 140, H = 40, max = Math.max(...m.map((p) => p.error_rate), 0.02);
+  const pts = m.map((p, i) => [(i * W) / (m.length - 1), H - 3 - (p.error_rate / max) * (H - 8)]);
+  const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const c = crit ? "var(--crit)" : "var(--ok)", id = "sp" + Math.random().toString(36).slice(2, 7);
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".3"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs>
+    <path d="${line} L${W} ${H} L0 ${H}Z" fill="url(#${id})"/><path d="${line}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+function overview() {
+  const sv = sorted(), inc = openInc();
+  const reqs = sv.reduce((a, s) => a + s.recent_requests, 0);
+  const errs = sv.reduce((a, s) => a + s.recent_requests * s.recent_error_rate, 0);
+  const g = reqs ? errs / reqs : 0;
+  return `<div class="page">
+    <div class="page-h"><div><h1>Vue d'ensemble</h1><p>Santé de la production sur les 10 dernières minutes.</p></div></div>
+    ${inc.map((s) => `<div class="banner"><i class="dot crit"></i><div><b>${esc(s.service)}</b> est en incident : ${pct(s.recent_error_rate)} d'erreurs 5xx, ×${(ratio(s) || 0).toFixed(0)} par rapport au normal.</div>
+      <button class="btn" data-inv="${esc(s.service)}">Investiguer avec l'agent</button></div>`).join("")}
+    <div class="kpis">
+      <div><div class="k">Services surveillés</div><div class="v">${sv.length}</div><div class="sub">${sv.length - inc.length} sains</div></div>
+      <div><div class="k">Incidents ouverts</div><div class="v ${inc.length ? "crit" : "ok"}">${inc.length}</div><div class="sub">${inc.length ? "Action requise" : "Tout va bien"}</div></div>
+      <div><div class="k">Erreurs 5xx globales</div><div class="v ${g > 0.05 ? "crit" : ""}">${pct(g, 1)}</div><div class="sub">pondéré par le trafic</div></div>
+      <div><div class="k">Requêtes</div><div class="v">${reqs}<small>/ 10 min</small></div><div class="sub">tous services</div></div>
+    </div>
+    <div class="sec-t"><h2>Services</h2><span>Cliquez sur un service pour le détail</span></div>
+    <div class="cards">${sv.map((s) => {
+      const crit = s.status === "incident", r = ratio(s);
+      return `<a class="scard ${crit ? "crit" : ""}" href="#/service/${encodeURIComponent(s.service)}">
+        <div class="scard-h"><b>${esc(s.service)}</b><span class="badge ${crit ? "crit" : "ok"}">${crit ? "Incident" : "Sain"}</span></div>
+        <div class="scard-m"><div><div class="big ${crit ? "crit" : ""}">${pct(s.recent_error_rate, crit ? 0 : 1)}</div>
+          <div class="sub">erreurs 5xx · normal ${pct(s.baseline_error_rate, 1)}</div></div>${spark(state.details[s.service], crit)}</div>
+        <div class="scard-f"><span>${esc(s.recent_requests)} req / 10 min${crit && r ? " · ×" + r.toFixed(0) + " vs normal" : ""}</span>
+          <span class="link">Détail →</span></div></a>`;
+    }).join("")}</div></div>`;
+}
+
+function servicePage(name) {
+  const s = state.services.find((x) => x.service === name);
+  if (!s) return `<div class="page"><div class="empty">Service inconnu : ${esc(name)}. <a class="link" href="#/">Retour</a></div></div>`;
+  const det = state.details[name], crit = s.status === "incident", r = ratio(s), last = lastResult(name);
+  const er = det?.error_rate, ops = det?.slow_spans?.operations || [], bi = det?.business_impact;
+  return `<div class="page">
+    <div class="page-h"><div><h1 class="mono">${esc(name)}</h1><p>${crit ? "Incident en cours : le taux d'erreur dépasse largement le niveau normal." : "Aucune anomalie détectée."}</p></div>
+      <div class="row"><span class="badge ${crit ? "crit" : "ok"}">${crit ? "Incident" : "Sain"}</span>
+      <button class="btn ${crit ? "" : "ghost"}" data-inv="${esc(name)}">${last ? "Relancer l'agent" : "Investiguer avec l'agent"}</button></div></div>
+    <div class="kpis">
+      <div><div class="k">Erreurs 5xx</div><div class="v ${crit ? "crit" : "ok"}">${pct(s.recent_error_rate, crit ? 0 : 1)}</div></div>
+      <div><div class="k">Niveau normal</div><div class="v">${pct(s.baseline_error_rate, 1)}</div></div>
+      <div><div class="k">Requêtes</div><div class="v">${esc(s.recent_requests)}<small>/ 10 min</small></div></div>
+      <div><div class="k">Écart au normal</div><div class="v ${crit ? "crit" : ""}">${r ? "×" + r.toFixed(1).replace(".", ",") : "—"}</div></div></div>
+    ${last ? `<div class="card"><div class="card-h"><h2>Dernier diagnostic de l'agent</h2><span>${esc(last.metrics.diagnosis_seconds)} s</span></div><div class="card-b diag">
+      <div class="comp">${esc(last.root_cause.faulty_component)}</div><p style="color:var(--soft)">${esc(last.root_cause.summary)}</p>
+      <ol class="steps2">${(last.root_cause.next_steps || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div></div>` : ""}
+    <div class="two">
+      <div class="card"><div class="card-h"><h2>Taux d'erreur 5xx par minute</h2><span>ClickHouse</span></div><div class="card-b">${er?.minutes?.length ? chart(er) : `<div class="empty">${det ? "Pas de données." : "Chargement…"}</div>`}</div></div>
+      <div class="stack" style="display:grid;gap:16px">
+        <div class="card"><div class="card-h"><h2>Opérations lentes</h2><span>OpenSearch</span></div><div class="card-b">${ops.length ? `<table><tr><th>Opération</th><th class="n">Erreurs</th><th class="n">p99</th></tr>${ops.map((o) => `<tr><td class="mono ${o.operation === det.slow_spans.faulty_operation ? "hot" : ""}">${esc(o.operation)}</td><td class="n">${esc(o.error_count)}</td><td class="n">${esc(o.p99_ms)} ms</td></tr>`).join("")}</table>` : `<div class="empty">Aucune opération lente.</div>`}</div></div>
+        ${crit ? `<div class="card"><div class="card-h"><h2>Impact métier</h2><span>PostgreSQL</span></div><div class="card-b">${bi && bi.pending_orders != null ? `<div class="v">${esc(bi.pending_orders)}</div><div class="sub">commandes bloquées depuis ${esc(bi.oldest_pending ?? "n/a")}</div>` : `<div class="empty">Indisponible.</div>`}</div></div>` : ""}
+      </div></div></div>`;
+}
+
+function renderDash() {
+  const name = route();
+  $("#crumbs").innerHTML = name ? `<a href="#/">Vue d'ensemble</a><span>/</span><b>${esc(name)}</b>` : `<b>Vue d'ensemble</b>`;
+  const el = $("#dash"), top = el.scrollTop;
+  el.innerHTML = state.services.length || !name ? (name ? servicePage(name) : overview()) : `<div class="page"><div class="empty">Chargement…</div></div>`;
+  el.scrollTop = top;
+}
+
+async function loadDetail(name) {
+  try { const r = await fetch("/services/" + encodeURIComponent(name)); if (r.ok) state.details[name] = await r.json(); } catch {}
 }
 
 async function loadServices() {
@@ -119,7 +203,9 @@ async function loadServices() {
     state.services = (await r.json()).services;
     conn.className = "live ok"; conn.lastElementChild.textContent = "Données en direct";
   } catch { conn.className = "live ko"; conn.lastElementChild.textContent = "Backend injoignable"; }
-  renderSide();
+  renderSide(); renderDash();
+  await Promise.all(state.services.map((x) => loadDetail(x.service)));
+  renderDash();
   if (!state.run && !state.thread.length) renderThread(); // l'accueil suit l'état des services
 }
 
@@ -127,6 +213,7 @@ async function investigate(payload, label) {
   if (state.run) return;
   const run = { service: payload.service || "…", steps: {} };
   state.run = run;
+  setAgent(true);
   state.thread.push({ type: "user", text: label }, { type: "run", run });
   renderThread();
   try {
@@ -155,7 +242,7 @@ async function investigate(payload, label) {
     state.history.push(final.metrics.diagnosis_seconds);
   } catch (e) { run.error = "Je n'ai pas pu terminer : " + e.message; }
   state.run = null;
-  renderSide(); renderThread();
+  renderSide(); renderDash(); renderThread();
 }
 
 const results = () => state.thread.filter((m) => m.type === "result").map((m) => m.res);
@@ -178,6 +265,17 @@ $("#ask").addEventListener("submit", (e) => {
   if (q) { investigate({ question: q }, q); $("#question").value = ""; }
 });
 
+function setAgent(open) {
+  $(".app").classList.toggle("agent-off", !open);
+  $("#toggle-agent").setAttribute("aria-pressed", open);
+  if (innerWidth > 1280) { try { localStorage.setItem("agent-open", open ? "1" : "0"); } catch {} }
+}
+let saved = null; try { saved = localStorage.getItem("agent-open"); } catch {}
+setAgent(innerWidth > 1280 ? saved !== "0" : false);
+$("#toggle-agent").onclick = () => setAgent($(".app").classList.contains("agent-off"));
+$("#close-agent").onclick = () => setAgent(false);
+document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "j") { e.preventDefault(); $("#toggle-agent").click(); } });
+addEventListener("hashchange", () => { renderSide(); renderDash(); renderChips(); const n = route(); if (n) loadDetail(n).then(renderDash); });
 renderThread();
 loadServices();
 setInterval(() => { if (!state.run) loadServices(); }, 30000);

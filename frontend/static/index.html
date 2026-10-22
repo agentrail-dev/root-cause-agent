@@ -14,22 +14,29 @@
 <div class="app">
   <aside class="side">
     <div class="brand"><span class="logo"></span><span>RootCause</span></div>
+    <nav class="nav-top"><a class="svc" id="nav-home" href="#/"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg><span class="svc-name sans">Vue d'ensemble</span></a></nav>
     <div class="side-label">Services surveillés <span id="svc-count"></span></div>
     <nav id="nav"></nav>
     <div class="side-foot" id="session"></div>
   </aside>
-  <div class="main">
-    <header class="top"><b>Agent d'incident</b><span class="sources">ClickHouse · OpenSearch · PostgreSQL</span>
-      <div class="live" id="conn"><i></i><span>Connexion…</span></div></header>
-    <main id="scroll"><div class="thread" id="thread"></div></main>
+  <div class="center">
+    <header class="top"><div class="crumbs" id="crumbs"></div><span class="sources">ClickHouse · OpenSearch · PostgreSQL</span>
+      <div class="live" id="conn"><i></i><span>Connexion…</span></div>
+      <button class="btn ghost agent-toggle" id="toggle-agent" title="Afficher / masquer l'agent (Ctrl+J)"><span class="avatar xs"></span>Agent</button></header>
+    <main id="dash"></main>
+  </div>
+  <section class="agent" id="agent">
+    <div class="agent-h"><span class="avatar sm"></span><div><b>Agent d'incident</b><small>Corrèle logs, traces et commandes</small></div>
+      <button class="x" id="close-agent" aria-label="Fermer">×</button></div>
+    <div class="agent-scroll" id="scroll"><div class="thread" id="thread"></div></div>
     <footer class="composer">
       <div class="chips" id="chips"></div>
       <form id="ask" class="cmd">
-        <input id="question" autocomplete="off" placeholder="Demandez à l'agent… ex. Pourquoi le taux d'erreur a-t-il augmenté sur le paiement ?">
+        <input id="question" autocomplete="off" placeholder="Demandez à l'agent…">
         <button class="send" type="submit" aria-label="Envoyer"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16V4M5 9l5-5 5 5"/></svg></button>
       </form>
     </footer>
-  </div>
+  </section>
 </div>
 <script src="/app.js"></script>
 </body>
