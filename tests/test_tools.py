@@ -49,3 +49,20 @@ def test_services_health_flags_incident_first():
     res = tools.summarize_services_health(rows)
     assert [r["service"] for r in res][0] == "pay" and res[0]["status"] == "incident"
     assert {r["service"]: r["status"] for r in res}["tiny"] == "healthy"  # trop peu de trafic
+
+
+def test_score_services_finds_degraded_service():
+    before = {("checkout", "hipstershop.EmailService/Send"): (100, 3.0, 0), ("checkout", "hipstershop.CartService/Get"): (100, 10.0, 0),
+              ("email", "grpc.hipstershop.EmailService/Send"): (100, 0.3, 0), ("frontend", "frontend"): (100, 200.0, 0)}
+    after = {("checkout", "hipstershop.EmailService/Send"): (100, 9.0, 0), ("checkout", "hipstershop.CartService/Get"): (100, 25.0, 0),
+             ("email", "grpc.hipstershop.EmailService/Send"): (100, 0.3, 0), ("frontend", "frontend"): (100, 210.0, 0)}
+    assert tools.score_services(before, after)[0]["service"] == "checkout"
+
+
+def test_score_services_network_fault_blames_callee():
+    # le callee n'est pas lent côté serveur, mais ses appels clients (émis par frontend) le sont
+    before = {("frontend", "hipstershop.CurrencyService/Convert"): (100, 4.0, 0), ("currency", "grpc.hipstershop.CurrencyService/Convert"): (100, 0.1, 0),
+              ("frontend", "hipstershop.CartService/Get"): (100, 5.0, 0), ("cart", "grpc.hipstershop.CartService/Get"): (100, 0.2, 0)}
+    after = {("frontend", "hipstershop.CurrencyService/Convert"): (100, 40.0, 0), ("currency", "grpc.hipstershop.CurrencyService/Convert"): (100, 0.1, 0),
+             ("frontend", "hipstershop.CartService/Get"): (100, 5.1, 0), ("cart", "grpc.hipstershop.CartService/Get"): (100, 0.2, 0)}
+    assert tools.score_services(before, after)[0]["service"] == "currency"

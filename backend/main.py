@@ -16,6 +16,8 @@ app = FastAPI(title="Root Cause Agent")
 class DiagnoseRequest(BaseModel):
     question: str = "Diagnostiquer l'incident en cours"
     service: str | None = None
+    case_id: str | None = None
+    use_llm: bool = True
 
 
 @app.get("/health")
@@ -28,7 +30,7 @@ def diagnose(req: DiagnoseRequest):
     """Flux NDJSON : un événement JSON par ligne (step_start / step_done / final / error)."""
     def gen():
         try:
-            for ev in run_stream(req.question, req.service):
+            for ev in run_stream(req.question, req.service, req.case_id, req.use_llm):
                 yield json.dumps(ev, ensure_ascii=False, default=str) + "\n"
         except Exception as e:
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"
@@ -72,4 +74,37 @@ def service_detail(name: str):
 
 
 # Front statique, monté en dernier pour ne pas masquer les routes API.
+
+
+@app.get("/cases")
+def cases():
+    """Cas de benchmark RCAEval chargés (avec vérité terrain pour l'évaluation)."""
+    return {"cases": tools.list_cases()}
+
+
+class BenchmarkRequest(BaseModel):
+    limit: int = 0
+    use_llm: bool = False
+
+
+@app.post("/benchmark")
+def benchmark(req: BenchmarkRequest):
+    """Diagnostique chaque cas chargé (sans LLM par défaut) ; flux NDJSON : un résultat par cas."""
+    def gen():
+        for c in tools.list_cases()[: req.limit or None]:
+            try:
+                final = next(e for e in run_stream("", case_id=c["case_id"], use_llm=req.use_llm) if e["type"] == "final")
+                yield json.dumps({"type": "case", "case_id": c["case_id"], "found": final["service"],
+                                  "truth": c["root_cause_service"], "fault_type": c["fault_type"],
+                                  "ok": final["metrics"]["accuracy"] == 1.0,
+                                  "onset_error_seconds": final["metrics"]["onset_error_seconds"],
+                                  "seconds": final["metrics"]["diagnosis_seconds"]}) + "\n"
+            except Exception as e:
+                yield json.dumps({"type": "case", "case_id": c["case_id"], "error": str(e)}) + "\n"
+        yield json.dumps({"type": "done"}) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+# Le frontend statique doit être monté EN DERNIER : un montage sur « / » masque les routes déclarées après lui.
 app.mount("/", StaticFiles(directory=Path(__file__).parent.parent / "frontend" / "static", html=True), name="ui")

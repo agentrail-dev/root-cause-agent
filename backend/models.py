@@ -28,6 +28,7 @@ class TimelineEvent(BaseModel):
 
 class AgentState(TypedDict, total=False):
     question: str
+    case_id: str
     service_name: str
     time_window_minutes: int
     error_rate: dict
