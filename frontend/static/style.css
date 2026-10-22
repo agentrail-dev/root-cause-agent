@@ -45,7 +45,7 @@ main{flex:1;overflow:auto;padding:32px 32px 48px;scroll-behavior:smooth}
 .thread{max-width:780px;margin:0 auto;display:grid;gap:28px}
 
 /* messages */
-.msg{display:grid;grid-template-columns:30px 1fr;gap:14px;animation:in .25s ease-out}
+.msg{display:grid;grid-template-columns:30px 1fr;gap:14px}
 .avatar{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#9aa0ff,#6068f0);position:relative;box-shadow:0 4px 14px rgba(124,131,255,.3)}
 .avatar::after{content:"";position:absolute;inset:9px;border:2px solid #fff;border-radius:50%}
 .msg.user{grid-template-columns:1fr;justify-items:end}
@@ -142,7 +142,7 @@ a.svc.sel{background:var(--raised);color:var(--text);box-shadow:0 0 0 1px var(--
 .agent-toggle[aria-pressed=true]{background:var(--hover);border-color:var(--accent)}
 .avatar.xs{width:16px;height:16px;border-radius:5px;box-shadow:none}.avatar.xs::after{inset:4.5px;border-width:1.5px}
 #dash{flex:1;overflow:auto;padding:28px 32px 56px}
-.page{max-width:1000px;margin:0 auto;display:grid;gap:22px;animation:in .25s ease-out}
+.page{max-width:1000px;margin:0 auto;display:grid;gap:22px}
 .page-h{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
 .page-h h1{font:600 22px/1.2 var(--font);letter-spacing:-.02em}
 .page-h h1.mono{font-family:var(--mono)}
@@ -256,3 +256,4 @@ svg.chart text{font-size:14px!important}
 .idle h3{font-size:15px;font-weight:600;margin-bottom:4px}
 .idle p{color:var(--muted);max-width:560px}
 nav{overflow-x:hidden}.svc{min-width:0}
+.page.enter{animation:in .25s ease-out}

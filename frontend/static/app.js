@@ -214,6 +214,8 @@ function renderDash() {
   el.innerHTML = v === "alerts" ? alertsPage() : v === "benchmark" ? benchPage()
     : v === "service" ? (state.services.length ? servicePage(name) : `<div class="page"><div class="empty">Chargement…</div></div>`) : overview();
   el.scrollTop = top;
+  // animation d'entrée seulement au changement de page, pas à chaque rafraîchissement automatique
+  if (state.lastView !== hash()) { state.lastView = hash(); el.firstElementChild?.classList.add("enter"); el.scrollTop = 0; }
 }
 
 
@@ -240,7 +242,7 @@ function alertCard(a) {
   return `<article class="alert ${open ? "open" : ""}">
     <div class="alert-h"><span class="badge ${open ? "crit" : "ok"}">${open ? "Ouvert" : "Résolu"}</span>
       <a class="alert-svc" href="#/service/${encodeURIComponent(a.service)}">${esc(a.service)}</a>
-      <span class="hint">${when} · ${pct(a.error_rate)} d'erreurs 5xx</span>
+      <span class="hint">${when}${a.error_rate > 0 ? " · " + pct(a.error_rate) + " d'erreurs 5xx" : ""}</span>
       ${a.notified ? `<span class="chip-s">Notification envoyée</span>` : ""}</div>
     <p class="alert-sum">${esc(rc.summary)}</p>
     <div class="alert-imp"><span>Impact</span>${esc(rc.business_impact)}</div>
