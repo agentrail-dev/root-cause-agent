@@ -159,12 +159,10 @@ function spark(det, crit) {
 function journey() {
   const w = state.wd, n = state.alerts.length;
   const st = (t, d, link) => `<div class="jstep"><b>${t}</b><span>${d}</span>${link || ""}</div>`;
-  return `<div class="card"><div class="card-h"><h2>Comment ça marche</h2><span>De la panne à la solution, sans intervention</span></div><div class="journey">
-    ${st("1. Surveiller", `${state.services.length} services suivis en continu (logs, traces, commandes).`)}
+  return `${st("1. Surveiller", `${state.services.length} services suivis en continu (logs, traces, commandes).`)}
     ${st("2. Détecter", w ? (w.running ? `Watchdog actif, dernier cycle ${ago(w.last_tick)}.` : "Watchdog inactif : détection manuelle.") : "Watchdog indisponible.", `<a class="link" href="#/alerts">Voir les alertes →</a>`)}
     ${st("3. Diagnostiquer", n ? `${n} diagnostic${n > 1 ? "s" : ""} automatique${n > 1 ? "s" : ""} réalisé${n > 1 ? "s" : ""}, cause racine incluse.` : "L'agent trouve la cause racine en quelques secondes.", `<a class="link" href="#/benchmark">Mesurer sa précision →</a>`)}
-    ${st("4. Recommander", "Chaque alerte propose des actions concrètes, à valider par l'ingénieur.")}
-  </div></div>`;
+    ${st("4. Recommander", "Chaque alerte propose des actions concrètes, à valider par l'ingénieur.")}`;
 }
 
 function overview() {
@@ -176,7 +174,6 @@ function overview() {
     <div class="page-h"><div><h1>Vue d'ensemble</h1><p>Santé de la production, mise à jour automatiquement.</p></div></div>
     ${inc.map((s) => `<div class="banner"><i class="dot crit"></i><div><b>${esc(s.service)}</b> est en incident : ${pct(s.recent_error_rate)} d'erreurs 5xx${vsNormal(s) ? ", " + vsNormal(s) : ""}.</div>
       <button class="btn" data-inv="${esc(s.service)}">Investiguer avec l'agent</button></div>`).join("")}
-    ${journey()}
     <div class="kpis">
       <div><div class="k">Services surveillés</div><div class="v">${sv.length}</div><div class="sub">${sv.length - inc.length} sains</div></div>
       <div><div class="k">Incidents ouverts</div><div class="v ${inc.length ? "crit" : "ok"}">${inc.length}</div><div class="sub">${inc.length ? "Action requise" : "Tout va bien"}</div></div>
@@ -488,3 +485,19 @@ loadAlerts();
 if (view() === "benchmark") loadCases();
 setInterval(loadAlerts, 8000);
 setInterval(() => { if (!state.run) loadServices(); }, 30000);
+
+// ---- Panneau d'aide « Comment ça marche » (bouton Aide, Échap pour fermer)
+function setHelp(open) {
+  const panel = $("#help-panel"), scrim = $("#help-scrim"), btn = $("#help-btn");
+  if (open) $("#help-body").innerHTML = journey();
+  panel.classList.toggle("open", open);
+  panel.setAttribute("aria-hidden", String(!open));
+  scrim.hidden = !open;
+  btn.setAttribute("aria-expanded", String(open));
+  if (open) $("#help-close").focus(); else btn.focus({ preventScroll: true });
+}
+$("#help-btn").addEventListener("click", () => setHelp(!$("#help-panel").classList.contains("open")));
+$("#help-close").addEventListener("click", () => setHelp(false));
+$("#help-scrim").addEventListener("click", () => setHelp(false));
+$("#help-body").addEventListener("click", (e) => { if (e.target.closest("a")) setHelp(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#help-panel").classList.contains("open")) setHelp(false); });

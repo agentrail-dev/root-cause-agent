@@ -281,3 +281,17 @@ nav{overflow-x:hidden}.svc{min-width:0}
   .live.ok i{animation:livepulse 2.4s ease-in-out infinite}
 }
 @media (prefers-reduced-motion:reduce){.new-tag{display:none}}
+
+/* Panneau d'aide (classes dédiées : pas de conflit avec .journey de la vue d'ensemble) */
+.help-q{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1px solid currentColor;font-size:11px;font-weight:700;margin-right:6px}
+.help-scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40;animation:in .2s ease-out}
+.help-scrim[hidden]{display:none}
+.help-panel{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);z-index:41;background:var(--panel);border-left:1px solid var(--line);box-shadow:-24px 0 60px rgba(0,0,0,.45);padding:22px 22px 28px;overflow:auto;transform:translateX(102%);transition:transform .22s ease-out;visibility:hidden}
+.help-panel.open{transform:none;visibility:visible}
+.help-h{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.help-h h2{margin:0;font-size:18px}
+.help-sub{color:#8b93a7;margin:6px 0 18px}
+.help-steps{display:grid;grid-template-columns:1fr;gap:12px}
+.help-steps .jstep{display:grid;gap:6px;border:1px solid var(--line);border-radius:12px;padding:14px;background:rgba(255,255,255,.02)}
+.help-steps .jstep b{font-size:14px}
+@media (prefers-reduced-motion:reduce){.help-panel{transition:none}.help-scrim{animation:none}}

@@ -213,6 +213,10 @@ def synthesize(state: AgentState) -> dict:
             summary=(f"À {start}, l'opération {comp} a subi une dégradation{p99} : "
                      f"{sp.get('error_count', 0)} spans en erreur, {bi['pending_orders']} commandes bloquées."),
         )
+    if not [x for x in rc.next_steps if x and x.strip()]:  # Claude omet parfois ce champ : actions de repli, jamais vide
+        rc.next_steps = [f"Inspecter les ressources (CPU, mémoire, réseau) et les dépendances de {comp}",
+                         f"Vérifier les déploiements et changements de configuration récents sur {comp} autour de {start}",
+                         f"Ajouter une alerte sur la latence et le taux d'erreur de {comp}"]
     if case and sp.get("faulty_service"):  # le composant vient de la donnée, pas de la prose du LLM
         rc.faulty_component = sp["faulty_service"]
     elif sp.get("faulty_operation"):

@@ -24,9 +24,16 @@
   <div class="center">
     <header class="top"><div class="crumbs" id="crumbs"></div><span class="sources">ClickHouse · OpenSearch · PostgreSQL</span>
       <div class="live" id="conn"><i></i><span>Connexion…</span></div>
+      <button class="btn ghost" id="help-btn" aria-haspopup="dialog" aria-expanded="false" title="Comment ça marche"><span class="help-q">?</span>Aide</button>
       <button class="btn ghost agent-toggle" id="toggle-agent" title="Afficher / masquer l'agent (Ctrl+J)"><span class="avatar xs"></span>Agent</button></header>
     <main id="dash"></main>
   </div>
+  <div class="help-scrim" id="help-scrim" hidden></div>
+  <aside class="help-panel" id="help-panel" role="dialog" aria-label="Comment ça marche" aria-hidden="true">
+    <div class="help-h"><h2>Comment ça marche</h2><button class="btn ghost" id="help-close" aria-label="Fermer l'aide">Fermer</button></div>
+    <p class="help-sub">De la panne à la solution, sans intervention.</p>
+    <div class="help-steps" id="help-body"></div>
+  </aside>
   <section class="agent" id="agent">
     <div class="agent-h"><span class="avatar sm"></span><div><b>Agent d'incident</b><small>Corrèle logs, traces et commandes</small></div>
       <button class="x" id="close-agent" aria-label="Fermer">×</button></div>
