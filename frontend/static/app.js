@@ -8,7 +8,8 @@ const STEPS = [
   ["find_faulty_span", "Je cherche où ça casse"], ["check_business_impact", "Je mesure l'impact métier"],
   ["synthesize", "Je rédige la cause racine"],
 ];
-const state = { services: [], details: {}, thread: [], run: null, history: [] };
+const state = { services: [], details: {}, thread: [], run: null, history: [], alerts: [], wd: null, alertsErr: null,
+  alertOpen: new Set(), bench: { cases: null, casesErr: null, rows: {}, running: false, done: false, err: null, limit: "", llm: false } };
 const sorted = () => [...state.services].sort((a, b) => (b.status === "incident") - (a.status === "incident"));
 const openInc = () => state.services.filter((s) => s.status === "incident");
 const bold = (t) => `<b>${esc(t)}</b>`;
@@ -43,7 +44,7 @@ function greeting() {
   const inc = openInc();
   if (!state.services.length) return "Je n'arrive pas à joindre les sources de données.";
   if (!inc.length) return `<p>Bonjour. Je surveille <b>${state.services.length} services</b> et tout est nominal. Posez-moi une question quand vous voulez.</p>`;
-  const list = inc.map((s) => `<p><span class="code">${esc(s.service)}</span> : <span class="crit-t">${pct(s.recent_error_rate)}</span> d'erreurs 5xx, contre ${pct(s.baseline_error_rate)} d'habitude (×${(s.recent_error_rate / (s.baseline_error_rate || .01)).toFixed(0)}) sur ${esc(s.recent_requests)} requêtes en 10 min.</p>`).join("");
+  const list = inc.map((s) => `<p><span class="code">${esc(s.service)}</span> : <span class="crit-t">${pct(s.recent_error_rate)}</span> d'erreurs 5xx${s.baseline_error_rate ? `, contre ${pct(s.baseline_error_rate)} d'habitude (×${ratio(s).toFixed(0)})` : vsNormal(s) ? ` (${vsNormal(s)})` : ""} sur ${esc(s.recent_requests)} requêtes récentes.</p>`).join("");
   return `<p>Bonjour. Je surveille <b>${state.services.length} services</b> et j'ai détecté <b>${inc.length} incident${inc.length > 1 ? "s" : ""} ouvert${inc.length > 1 ? "s" : ""}</b> :</p>${list}
     <p>Je peux corréler les logs, les traces et les commandes pour trouver la cause racine et vous proposer des actions. Je lance l'investigation ?</p>
     <div class="row">${inc.map((s) => `<button class="btn" data-inv="${esc(s.service)}">Investiguer ${esc(s.service)}</button>`).join("")}</div>`;
@@ -99,12 +100,20 @@ function renderChips() {
   $("#chips").innerHTML = state.run ? "" : list.map((s) => `<button class="chip" data-inv="${esc(s.service)}"><i class="dot crit"></i>Investiguer ${esc(s.service)}</button>`).join("");
 }
 
-const route = () => decodeURIComponent((location.hash.match(/^#\/service\/(.+)$/) || [])[1] || "");
-
+const hash = () => decodeURIComponent(location.hash.replace(/^#\/?/, ""));
+const view = () => { const h = hash(); return h === "alerts" || h === "benchmark" ? h : h.startsWith("service/") ? "service" : "home"; };
+const route = () => (hash().startsWith("service/") ? hash().slice(8) : "");
+const utc = (t) => (t ? new Date(t.replace(" ", "T") + "Z") : null);
+const dur = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? s + " s" : s < 3600 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1).replace(".", ",") + " h"; };
+const ago = (t) => (t ? "il y a " + dur(Date.now() - utc(t)) : "—");
 function renderSide() {
   const cur = route();
   $("#svc-count").textContent = state.services.length || "";
-  $("#nav-home").classList.toggle("sel", !cur);
+  const v = view(), openN = state.alerts.filter((x) => !x.resolved_at).length;
+  $("#nav-home").classList.toggle("sel", v === "home");
+  $("#nav-alerts").classList.toggle("sel", v === "alerts");
+  $("#nav-bench").classList.toggle("sel", v === "benchmark");
+  $("#alert-badge").textContent = openN || ""; $("#alert-badge").hidden = !openN;
   $("#nav").innerHTML = sorted().map((s) => {
     const crit = s.status === "incident";
     return `<a class="svc ${s.service === cur ? "sel" : ""}" href="#/service/${encodeURIComponent(s.service)}"><i class="dot ${crit ? "crit" : ""}"></i><span class="svc-name">${esc(s.service)}</span>
@@ -118,6 +127,8 @@ function renderSide() {
 
 /* ---------- dashboard ---------- */
 const ratio = (s) => (s.baseline_error_rate ? s.recent_error_rate / s.baseline_error_rate : null);
+// En mode live le niveau normal vaut 0 : on affiche le score de dégradation de l'API plutôt qu'un multiple.
+const vsNormal = (s) => (ratio(s) ? "×" + ratio(s).toFixed(0) + " par rapport au normal" : s.score != null ? "score de dégradation " + s.score : "");
 const lastResult = (svc) => state.thread.filter((m) => m.type === "result" && m.res.service === svc).map((m) => m.res).pop();
 
 function spark(det, crit) {
@@ -131,6 +142,17 @@ function spark(det, crit) {
     <path d="${line} L${W} ${H} L0 ${H}Z" fill="url(#${id})"/><path d="${line}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
 }
 
+function journey() {
+  const w = state.wd, n = state.alerts.length;
+  const st = (t, d, link) => `<div class="jstep"><b>${t}</b><span>${d}</span>${link || ""}</div>`;
+  return `<div class="card"><div class="card-h"><h2>Comment ça marche</h2><span>De la panne à la solution, sans intervention</span></div><div class="journey">
+    ${st("1. Surveiller", `${state.services.length} services suivis en continu (logs, traces, commandes).`)}
+    ${st("2. Détecter", w ? (w.running ? `Watchdog actif, dernier cycle ${ago(w.last_tick)}.` : "Watchdog inactif : détection manuelle.") : "Watchdog indisponible.", `<a class="link" href="#/alerts">Voir les alertes →</a>`)}
+    ${st("3. Diagnostiquer", n ? `${n} diagnostic${n > 1 ? "s" : ""} automatique${n > 1 ? "s" : ""} réalisé${n > 1 ? "s" : ""}, cause racine incluse.` : "L'agent trouve la cause racine en quelques secondes.", `<a class="link" href="#/benchmark">Mesurer sa précision →</a>`)}
+    ${st("4. Recommander", "Chaque alerte propose des actions concrètes, à valider par l'ingénieur.")}
+  </div></div>`;
+}
+
 function overview() {
   const sv = sorted(), inc = openInc();
   const reqs = sv.reduce((a, s) => a + s.recent_requests, 0);
@@ -138,8 +160,9 @@ function overview() {
   const g = reqs ? errs / reqs : 0;
   return `<div class="page">
     <div class="page-h"><div><h1>Vue d'ensemble</h1><p>Santé de la production sur les 10 dernières minutes.</p></div></div>
-    ${inc.map((s) => `<div class="banner"><i class="dot crit"></i><div><b>${esc(s.service)}</b> est en incident : ${pct(s.recent_error_rate)} d'erreurs 5xx, ×${(ratio(s) || 0).toFixed(0)} par rapport au normal.</div>
+    ${inc.map((s) => `<div class="banner"><i class="dot crit"></i><div><b>${esc(s.service)}</b> est en incident : ${pct(s.recent_error_rate)} d'erreurs 5xx${vsNormal(s) ? ", " + vsNormal(s) : ""}.</div>
       <button class="btn" data-inv="${esc(s.service)}">Investiguer avec l'agent</button></div>`).join("")}
+    ${journey()}
     <div class="kpis">
       <div><div class="k">Services surveillés</div><div class="v">${sv.length}</div><div class="sub">${sv.length - inc.length} sains</div></div>
       <div><div class="k">Incidents ouverts</div><div class="v ${inc.length ? "crit" : "ok"}">${inc.length}</div><div class="sub">${inc.length ? "Action requise" : "Tout va bien"}</div></div>
@@ -153,7 +176,7 @@ function overview() {
         <div class="scard-h"><b>${esc(s.service)}</b><span class="badge ${crit ? "crit" : "ok"}">${crit ? "Incident" : "Sain"}</span></div>
         <div class="scard-m"><div><div class="big ${crit ? "crit" : ""}">${pct(s.recent_error_rate, crit ? 0 : 1)}</div>
           <div class="sub">erreurs 5xx · normal ${pct(s.baseline_error_rate, 1)}</div></div>${spark(state.details[s.service], crit)}</div>
-        <div class="scard-f"><span>${esc(s.recent_requests)} req / 10 min${crit && r ? " · ×" + r.toFixed(0) + " vs normal" : ""}</span>
+        <div class="scard-f"><span>${esc(s.recent_requests)} req / 10 min${crit && vsNormal(s) ? " · " + vsNormal(s).replace("par rapport au normal", "vs normal") : ""}</span>
           <span class="link">Détail →</span></div></a>`;
     }).join("")}</div></div>`;
 }
@@ -184,11 +207,143 @@ function servicePage(name) {
 }
 
 function renderDash() {
-  const name = route();
-  $("#crumbs").innerHTML = name ? `<a href="#/">Vue d'ensemble</a><span>/</span><b>${esc(name)}</b>` : `<b>Vue d'ensemble</b>`;
+  const v = view(), name = route();
+  const crumb = { alerts: "Alertes", benchmark: "Benchmark RCAEval", home: "Vue d'ensemble" };
+  $("#crumbs").innerHTML = v === "service" ? `<a href="#/">Vue d'ensemble</a><span>/</span><b>${esc(name)}</b>` : `<b>${crumb[v]}</b>`;
   const el = $("#dash"), top = el.scrollTop;
-  el.innerHTML = state.services.length || !name ? (name ? servicePage(name) : overview()) : `<div class="page"><div class="empty">Chargement…</div></div>`;
+  el.innerHTML = v === "alerts" ? alertsPage() : v === "benchmark" ? benchPage()
+    : v === "service" ? (state.services.length ? servicePage(name) : `<div class="page"><div class="empty">Chargement…</div></div>`) : overview();
   el.scrollTop = top;
+}
+
+
+/* ---------- alertes (watchdog) ---------- */
+function watchdogCard() {
+  const w = state.wd;
+  if (!w) return `<div class="card"><div class="card-b empty">${state.alertsErr ? "Watchdog injoignable : " + esc(state.alertsErr) : "Chargement…"}</div></div>`;
+  return `<div class="card wd"><div class="wd-main"><span class="badge ${w.running ? "ok" : "off"}">${w.running ? "Watchdog actif" : "Watchdog inactif"}</span>
+    <div class="wd-t">${w.running ? "L'agent surveille vos services et diagnostique seul chaque nouvel incident." : "La surveillance automatique est désactivée (variable <span class='code'>WATCHDOG=true</span>). Vous pouvez quand même forcer un cycle."}</div></div>
+    <div class="wd-stats"><div><span>Dernier cycle</span><b>${w.last_tick ? ago(w.last_tick) : "aucun"}</b></div>
+      <div><span>Intervalle</span><b>${w.interval ? w.interval + " s" : "—"}</b></div>
+      <div><span>Cycles</span><b>${esc(w.ticks)}</b></div>
+      <div><span>Incidents ouverts</span><b>${w.open_incidents.length}</b></div>
+      <div><span>Notification</span><b>${w.webhook_configured ? "Webhook actif" : "Non configurée"}</b></div></div>
+    <div class="wd-act"><button class="btn" id="tick" ${state.ticking ? "disabled" : ""}>${state.ticking ? "Cycle en cours…" : "Forcer un cycle"}</button>
+      ${state.tickMsg ? `<span class="hint">${esc(state.tickMsg)}</span>` : ""}
+      ${w.last_error ? `<span class="err-t">Dernière erreur : ${esc(w.last_error)}</span>` : ""}</div></div>`;
+}
+
+function alertCard(a) {
+  const open = !a.resolved_at, rc = a.root_cause, m = a.metrics, steps = rc.next_steps || [];
+  const isOpen = state.alertOpen.has(a.id) || (open && !state.alertSeen?.has(a.id));
+  const when = open ? `ouverte ${ago(a.opened_at)}` : `résolue après ${dur(utc(a.resolved_at) - utc(a.opened_at))}`;
+  return `<article class="alert ${open ? "open" : ""}">
+    <div class="alert-h"><span class="badge ${open ? "crit" : "ok"}">${open ? "Ouvert" : "Résolu"}</span>
+      <a class="alert-svc" href="#/service/${encodeURIComponent(a.service)}">${esc(a.service)}</a>
+      <span class="hint">${when} · ${pct(a.error_rate)} d'erreurs 5xx</span>
+      ${a.notified ? `<span class="chip-s">Notification envoyée</span>` : ""}</div>
+    <p class="alert-sum">${esc(rc.summary)}</p>
+    <div class="alert-imp"><span>Impact</span>${esc(rc.business_impact)}</div>
+    <details data-alert="${esc(a.id)}" ${isOpen ? "open" : ""}><summary>Pourquoi l'agent conclut ça, et que faire</summary>
+      <div class="alert-d">
+        <div><div class="sec-h">Ce qui s'est passé</div><p>L'incident a commencé à <b>${esc(rc.incident_start)}</b> sur <span class="code">${esc(rc.faulty_component)}</span>.</p></div>
+        <div><div class="sec-h">Preuves relevées</div><ul class="pl">${(a.evidence || []).map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>
+        <div><div class="sec-h">Actions suggérées</div>${steps.map((x, i) => `<div class="act"><i>${i + 1}</i><div>${esc(x)}</div><button class="cp" data-copy="${esc(x)}">Copier</button></div>`).join("") || `<div class="empty">Aucune action proposée.</div>`}
+          <div class="hint" style="margin-top:8px">À valider par l'ingénieur d'astreinte avant exécution.</div></div>
+        <div class="hint">Diagnostic automatique en ${esc(m.diagnosis_seconds)} s (vs 45 min à la main) · ${esc(m.evidence_count)} preuves recoupées</div>
+      </div></details></article>`;
+}
+
+function alertsPage() {
+  const list = state.alerts;
+  return `<div class="page"><div class="page-h"><div><h1>Alertes</h1><p>Incidents détectés et diagnostiqués automatiquement par le watchdog, du plus récent au plus ancien.</p></div></div>
+    ${watchdogCard()}
+    <div class="sec-t"><h2>Fil d'alertes</h2><span>${list.length} alerte${list.length > 1 ? "s" : ""} · ${list.filter((a) => !a.resolved_at).length} ouverte(s) · actualisé automatiquement</span></div>
+    ${list.length ? list.map(alertCard).join("") : `<div class="idle"><div><h3>Aucune alerte pour l'instant</h3><p>${state.wd?.running ? "Tout est calme : le watchdog n'a détecté aucun incident." : "Activez le watchdog, ou forcez un cycle pour lancer une détection maintenant."}</p></div></div>`}</div>`;
+}
+
+/* ---------- benchmark RCAEval ---------- */
+const median = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
+
+function benchPage() {
+  const b = state.bench, cases = b.cases || [];
+  const rows = Object.values(b.rows), valid = rows.filter((r) => !r.error), good = valid.filter((r) => r.ok);
+  const acc = valid.length ? good.length / valid.length : null;
+  const onsets = valid.map((r) => r.onset_error_seconds).filter((x) => typeof x === "number");
+  const secs = valid.map((r) => r.seconds).filter((x) => typeof x === "number");
+  const med = median(onsets), avg = secs.length ? secs.reduce((p, c) => p + c, 0) / secs.length : null;
+  const total = (+b.limit || 0) ? Math.min(+b.limit, cases.length) : cases.length;
+  const intro = `<div class="card"><div class="card-b intro"><div><b>1. Un incident réel</b><span>Chaque cas RCAEval est une panne injectée dans une vraie application, dont on connaît la cause.</span></div>
+    <div><b>2. L'agent enquête</b><span>Il analyse logs et traces sans voir la réponse, puis désigne le service fautif.</span></div>
+    <div><b>3. On compare</b><span>Son verdict est confronté à la vérité terrain : précision et écart sur l'heure de début.</span></div></div></div>`;
+  if (b.casesErr) return `<div class="page"><div class="page-h"><div><h1>Benchmark RCAEval</h1></div></div>${intro}<div class="err">Impossible de charger les cas : ${esc(b.casesErr)}. Chargez le jeu RCAEval (script de chargement) puis rechargez la page.</div></div>`;
+  const body = cases.map((c) => {
+    const r = b.rows[c.case_id];
+    const res = !r ? (b.running ? `<span class="hint">en attente…</span>` : "—") : r.error ? `<span class="badge crit" title="${esc(r.error)}">Erreur</span>` : r.ok ? `<span class="badge ok">Trouvé</span>` : `<span class="badge crit">Raté</span>`;
+    return `<tr><td class="mono">${esc(c.case_id)}</td><td>${esc(c.fault_type)}</td><td class="mono">${esc(c.root_cause_service)}</td>
+      <td class="mono ${r && !r.error && !r.ok ? "hot" : ""}">${r && !r.error ? esc(r.found) : "—"}</td><td>${res}</td>
+      <td class="n">${r && typeof r.onset_error_seconds === "number" ? esc(r.onset_error_seconds) + " s" : "—"}</td>
+      <td class="n">${r && typeof r.seconds === "number" ? esc(r.seconds) + " s" : "—"}</td></tr>`;
+  }).join("");
+  return `<div class="page"><div class="page-h"><div><h1>Benchmark RCAEval</h1><p>Mesure objective de la qualité des diagnostics de l'agent sur des pannes connues.</p></div></div>${intro}
+    <div class="card"><div class="card-b bench-ctl"><label>Nombre de cas <input type="number" min="1" max="${cases.length || 1}" placeholder="tous (${cases.length})" value="${esc(b.limit)}" data-bench="limit" ${b.running ? "disabled" : ""}></label>
+      <label class="chk"><input type="checkbox" data-bench="llm" ${b.llm ? "checked" : ""} ${b.running ? "disabled" : ""}> Avec le LLM</label>
+      <button class="btn" id="run-bench" ${b.running || !cases.length ? "disabled" : ""}>${b.running ? "Benchmark en cours…" : rows.length ? "Relancer le benchmark" : "Lancer le benchmark"}</button></div>
+      ${b.running ? `<div class="progress"><i style="width:${total ? (rows.length / total) * 100 : 0}%"></i></div>` : ""}</div>
+    ${b.err ? `<div class="err">${esc(b.err)}</div>` : ""}
+    <div class="kpis"><div><div class="k">Précision globale</div><div class="v xl ${acc == null ? "" : acc >= 0.7 ? "ok" : acc >= 0.4 ? "warn" : "crit"}">${acc == null ? "—" : pct(acc)}</div><div class="sub">${valid.length ? good.length + " cas trouvés sur " + valid.length : "Lancez le benchmark"}</div></div>
+      <div><div class="k">Écart de début (médian)</div><div class="v">${med == null ? "—" : esc(med) + "<small>s</small>"}</div><div class="sub">entre l'heure trouvée et la vraie</div></div>
+      <div><div class="k">Durée moyenne</div><div class="v">${avg == null ? "—" : avg.toFixed(1).replace(".", ",") + "<small>s</small>"}</div><div class="sub">par diagnostic</div></div>
+      <div><div class="k">Cas évalués</div><div class="v">${valid.length}<small>/ ${total || cases.length}</small></div><div class="sub">${rows.length - valid.length ? rows.length - valid.length + " en erreur" : "aucune erreur"}</div></div></div>
+    <div class="card"><div class="card-h"><h2>Résultats par cas</h2><span>${cases.length} cas chargés</span></div><div class="card-b" style="overflow:auto">${cases.length ? `<table>
+      <tr><th>Cas</th><th>Type de panne</th><th>Vérité terrain</th><th>Trouvé</th><th>Résultat</th><th class="n">Écart début</th><th class="n">Durée</th></tr>${body}</table>` : `<div class="empty">${b.cases ? "Aucun cas chargé." : "Chargement…"}</div>`}</div></div></div>`;
+}
+
+async function loadCases() {
+  const b = state.bench;
+  try { const r = await fetch("/cases"); if (!r.ok) throw new Error("HTTP " + r.status); b.cases = (await r.json()).cases; b.casesErr = null; }
+  catch (e) { b.casesErr = e.message; }
+  if (view() === "benchmark") renderDash();
+}
+
+async function runBenchmark() {
+  const b = state.bench; if (b.running) return;
+  Object.assign(b, { running: true, rows: {}, err: null }); renderDash();
+  try {
+    const r = await fetch("/benchmark", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit: +b.limit || 0, use_llm: b.llm }) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+    const handle = (ev) => { if (ev.type === "case") { b.rows[ev.case_id] = ev; renderDash(); } };
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n"); buf = lines.pop(); lines.filter(Boolean).forEach((l) => handle(JSON.parse(l)));
+    }
+    if (buf.trim()) handle(JSON.parse(buf));
+  } catch (e) { b.err = "Benchmark interrompu : " + e.message; }
+  b.running = false; renderDash();
+}
+
+/* ---------- alertes : chargement ---------- */
+async function loadAlerts() {
+  try {
+    const [a, w] = await Promise.all([fetch("/alerts"), fetch("/watchdog/status")]);
+    if (!a.ok || !w.ok) throw new Error("HTTP " + (a.ok ? w.status : a.status));
+    state.alerts = (await a.json()).alerts; state.wd = await w.json(); state.alertsErr = null;
+  } catch (e) { state.alertsErr = e.message; }
+  renderSide();
+  if (["alerts", "home"].includes(view())) renderDash();
+}
+
+async function forceTick() {
+  state.ticking = true; state.tickMsg = ""; renderDash();
+  try {
+    const r = await fetch("/watchdog/tick", { method: "POST" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const n = (await r.json()).created.length;
+    state.tickMsg = n ? `${n} nouvelle${n > 1 ? "s" : ""} alerte${n > 1 ? "s" : ""} créée${n > 1 ? "s" : ""}.` : "Cycle terminé : aucun nouvel incident.";
+  } catch (e) { state.tickMsg = "Échec du cycle : " + e.message; }
+  state.ticking = false; await loadAlerts(); loadServices();
 }
 
 async function loadDetail(name) {
@@ -246,7 +401,18 @@ async function investigate(payload, label) {
 }
 
 const results = () => state.thread.filter((m) => m.type === "result").map((m) => m.res);
+document.addEventListener("toggle", (e) => {
+  const id = e.target?.dataset?.alert; if (!id) return;
+  (state.alertSeen ||= new Set()).add(id);
+  e.target.open ? state.alertOpen.add(id) : state.alertOpen.delete(id);
+}, true);
+document.addEventListener("input", (e) => {
+  const k = e.target?.dataset?.bench; if (!k) return;
+  state.bench[k] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+});
 document.addEventListener("click", (e) => {
+  if (e.target.closest("#tick")) return forceTick();
+  if (e.target.closest("#run-bench")) return runBenchmark();
   const inv = e.target.closest("[data-inv]");
   if (inv) return investigate({ service: inv.dataset.inv }, `Investigue ${inv.dataset.inv}`);
   const cp = e.target.closest("[data-copy]");
@@ -275,7 +441,15 @@ setAgent(innerWidth > 1280 ? saved !== "0" : false);
 $("#toggle-agent").onclick = () => setAgent($(".app").classList.contains("agent-off"));
 $("#close-agent").onclick = () => setAgent(false);
 document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "j") { e.preventDefault(); $("#toggle-agent").click(); } });
-addEventListener("hashchange", () => { renderSide(); renderDash(); renderChips(); const n = route(); if (n) loadDetail(n).then(renderDash); });
+addEventListener("hashchange", () => {
+  renderSide(); renderDash(); renderChips();
+  const n = route(); if (n) loadDetail(n).then(renderDash);
+  if (view() === "benchmark" && !state.bench.cases) loadCases();
+  if (view() === "alerts") loadAlerts();
+});
 renderThread();
 loadServices();
+loadAlerts();
+if (view() === "benchmark") loadCases();
+setInterval(loadAlerts, 8000);
 setInterval(() => { if (!state.run) loadServices(); }, 30000);
