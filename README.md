@@ -8,8 +8,7 @@ python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
 cp .env.example .env   # renseigner les URLs Aiven + ANTHROPIC_API_KEY
 set -a; . ./.env; set +a
 python -m scripts.seed_data                  # idempotent (DROP + CREATE)
-uvicorn backend.main:app --port 8000 &
-streamlit run frontend/app.py
+uvicorn backend.main:app --port 8000   # UI sur http://localhost:8000
 ```
 
 ## Mode fallback (sans base)

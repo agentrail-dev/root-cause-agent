@@ -3,7 +3,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-ENV PYTHONUNBUFFERED=1 BACKEND_URL=http://localhost:8000
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8501
-# Backend (interne :8000) + Streamlit (exposé :8501)
-CMD ["sh", "-c", "uvicorn backend.main:app --host 127.0.0.1 --port 8000 & exec streamlit run frontend/app.py --server.port=${PORT:-8501} --server.address=0.0.0.0"]
+# API + front statique servis par FastAPI
+CMD ["sh", "-c", "exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8501}"]

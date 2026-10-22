@@ -1,6 +1,8 @@
-# Un seul conteneur : FastAPI (127.0.0.1:8000, interne) + Streamlit (8501, exposé).
-# Les secrets (CLICKHOUSE_URL, OPENSEARCH_URL, POSTGRES_URL, ANTHROPIC_API_KEY) viennent
-# de .env en local, ou des variables d'environnement configurées dans la console Aiven.
+# app    : FastAPI (127.0.0.1:8000, interne) + Streamlit (8501, exposé).
+# loader : job unique qui charge RCAEval RE2-OB depuis Zenodo vers Aiven (réseau cloud, rapide),
+#          puis expose sa progression sur :8080 (texte brut, aucun secret).
+# Les secrets (CLICKHOUSE_URL, OPENSEARCH_URL, POSTGRES_URL, ANTHROPIC_API_KEY) viennent de .env
+# en local, ou des variables d'environnement configurées dans la console Aiven.
 services:
   app:
     build: .
@@ -8,3 +10,12 @@ services:
       - path: .env
         required: false
     ports: ["8501:8501"]
+  loader:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    command: >
+      sh -c "mkdir -p /status && (cd /status && python -m http.server 8080 &) ;
+      python -u -m scripts.load_rcaeval --prefix RE2-OB 2>&1 | tee /status/index.txt ; sleep infinity"
+    ports: ["8080:8080"]

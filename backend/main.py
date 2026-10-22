@@ -1,7 +1,10 @@
 import json
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import tools
@@ -37,3 +40,7 @@ def diagnose(req: DiagnoseRequest):
 def incidents():
     """Santé de tous les services ; ceux en statut `incident` sont des incidents ouverts."""
     return {"services": tools.services_health()}
+
+
+# Front statique, monté en dernier pour ne pas masquer les routes API.
+app.mount("/", StaticFiles(directory=Path(__file__).parent.parent / "frontend" / "static", html=True), name="ui")
