@@ -39,19 +39,30 @@ def llm_structured(system: str, user: str, schema):
     try:
         import anthropic
 
-        client = anthropic.Anthropic(timeout=20)
-        resp = client.messages.create(
-            model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
-            max_tokens=1024,
-            system=system + "\n\nRéponds UNIQUEMENT en appelant l'outil `answer`.",
-            messages=[{"role": "user", "content": user}],
-            tools=[{"name": "answer", "description": "Réponse structurée",
-                    "input_schema": schema.model_json_schema()}],
-            tool_choice={"type": "auto"},
-        )
-        block = next(b for b in resp.content if b.type == "tool_use")
-        return schema.model_validate(block.input)
-    except Exception as e:  # réseau, quota, validation : on retombe sur l'heuristique
+        client = anthropic.Anthropic(timeout=30)
+        user_msg, last_err = user, None
+        for _ in range(2):  # 2e essai : on renvoie l'erreur de validation (le modèle oublie parfois un champ)
+            resp = client.messages.create(
+                model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
+                max_tokens=1500,
+                system=system + "\n\nRéponds UNIQUEMENT en appelant l'outil `answer`, avec TOUS les champs requis.",
+                messages=[{"role": "user", "content": user_msg}],
+                tools=[{"name": "answer", "description": "Réponse structurée",
+                        "input_schema": schema.model_json_schema()}],
+                tool_choice={"type": "auto"},
+            )
+            block = next((b for b in resp.content if b.type == "tool_use"), None)
+            if block is None:
+                user_msg = user + "\n\nTu dois répondre en appelant l'outil `answer`."
+                continue
+            try:
+                return schema.model_validate(block.input)
+            except Exception as e:  # champ manquant : on réessaie en le signalant
+                last_err = e
+                user_msg = user + f"\n\nTa réponse précédente était invalide ({str(e)[:300]}). Renvoie TOUS les champs requis."
+        print(f"[llm] fallback heuristique: {last_err}")
+        return None
+    except Exception as e:  # réseau, quota : on retombe sur l'heuristique
         print(f"[llm] fallback heuristique: {e}")
         return None
 
@@ -260,15 +271,17 @@ def run_stream(question: str, service: str | None = None, case_id: str | None = 
         info = tools.case_info(case_id)
         onset = (state["slow_spans"] or {}).get("onset_minute")
         onset_err = (abs((datetime.fromisoformat(onset) - datetime.fromisoformat(info["inject_ts"])).total_seconds())
-                     if onset else None)
+                     if onset and info.get("inject_ts") else None)
         elapsed = time.perf_counter() - t0
         yield {"type": "final", "root_cause": state["root_cause"], "service": found, "case_id": case_id,
                "evidence": _evidence(state),
                "metrics": {"diagnosis_seconds": round(elapsed, 1), "human_baseline_seconds": HUMAN_BASELINE_SECONDS,
                            "mttr_reduction": round(1 - elapsed / HUMAN_BASELINE_SECONDS, 4),
                            "evidence_count": state["evidence_count"],
-                           "accuracy": 1.0 if found == info["root_cause_service"] else 0.0,
-                           "ground_truth": f"{info['root_cause_service']} ({info['fault_type']})",
+                           "accuracy": (None if not info.get("root_cause_service")
+                                        else 1.0 if found == info["root_cause_service"] else 0.0),
+                           "ground_truth": (f"{info['root_cause_service']} ({info['fault_type']})"
+                                            if info.get("root_cause_service") else None),
                            "onset_error_seconds": onset_err},
                "truth": info,
                "data": {"error_rate": state["error_rate"], "slow_spans": state["slow_spans"],

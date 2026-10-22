@@ -101,8 +101,9 @@ def notify(alert: dict) -> bool:
 
 
 def diagnose(service: str) -> dict:
-    final = next(e for e in run_stream(f"Diagnostiquer l'incident sur {service}", service=service) if e["type"] == "final")
-    return final
+    live = tools.live_active()  # trafic simulé en direct : diagnostic multi-services sur la fenêtre LIVE
+    stream = run_stream(f"Diagnostiquer l'incident sur {service}", **({"case_id": tools.LIVE} if live else {"service": service}))
+    return next(e for e in stream if e["type"] == "final")
 
 
 def tick() -> list[dict]:

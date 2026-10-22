@@ -5,7 +5,7 @@ Les requêtes sont paramétrées (pas d'interpolation de chaînes utilisateur).
 """
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -118,6 +118,8 @@ def summarize_services_health(rows: list[tuple], spike_factor: float = 3.0, min_
 def services_health(window_minutes: int = 60) -> list[dict]:
     if demo_mode():
         return _fixture("services_health")
+    if live_active():
+        return live_health()
     res = clickhouse_client().query(SERVICES_HEALTH_SQL, parameters={"window": window_minutes})
     return summarize_services_health(res.result_rows)
 
@@ -217,7 +219,7 @@ TOOL_DEFINITIONS = [
 # =====================================================================
 import re
 import statistics
-from datetime import timedelta, timezone
+
 
 SPAN_INDEX = "otel-v1-apm-span-rcaeval"
 
@@ -242,7 +244,69 @@ def list_cases() -> list[dict]:
              "start_ts": _iso(r[4]), "end_ts": _iso(r[5]), "n_logs": r[6], "n_spans": r[7]} for r in rows]
 
 
+LIVE = "LIVE"
+_live_cache = {"t": 0.0, "v": False}
+
+
+def live_active() -> bool:
+    """Vrai si le simulateur de trafic écrit en ce moment (logs LIVE des 3 dernières minutes). Mis en cache 10 s."""
+    import time
+
+    if demo_mode() or not os.getenv("CLICKHOUSE_URL"):
+        return False
+    if time.time() - _live_cache["t"] > 10:
+        try:
+            n = clickhouse_client().query(
+                "SELECT count() FROM rca_logs WHERE case_id = 'LIVE' AND ts > now() - INTERVAL 3 MINUTE").result_rows[0][0]
+            _live_cache.update(t=time.time(), v=n > 0)
+        except Exception:
+            _live_cache.update(t=time.time(), v=False)
+    return _live_cache["v"]
+
+
+def live_fault_truth() -> dict | None:
+    """Dernière panne injectée dans le simulateur (vérité terrain live), ou None."""
+    if not os.getenv("POSTGRES_URL"):
+        return None
+    try:
+        import psycopg
+
+        with psycopg.connect(os.environ["POSTGRES_URL"], connect_timeout=5) as conn:
+            r = conn.execute("SELECT service, kind, since FROM live_faults ORDER BY id DESC LIMIT 1").fetchone()
+        return {"service": r[0], "kind": r[1], "since": r[2].astimezone(timezone.utc).replace(tzinfo=None)} if r else None
+    except Exception:
+        return None
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def live_health() -> list[dict]:
+    """Santé des services en direct : le watchdog compare les 90 dernières secondes à tout ce qui précède les 3 dernières minutes."""
+    b0, b1, a0, a1 = case_periods(LIVE)
+    osc = _opensearch()
+    ranked = score_services(_op_stats(osc, LIVE, b0, b1), _op_stats(osc, LIVE, a0, a1), min_spans=20, error_signal=True)
+    ch = clickhouse_client()
+    rows = {r[0]: r[1:] for r in ch.query(
+        "SELECT service_name, count(), countIf(status_code >= 500) FROM rca_logs "
+        "WHERE case_id = 'LIVE' AND ts > now() - INTERVAL 2 MINUTE GROUP BY service_name").result_rows}
+    top = ranked[0] if ranked else None
+    out = []
+    for r in ranked:
+        n, e = rows.get(r["service"], (0, 0))
+        out.append({"service": r["service"], "recent_error_rate": round(e / n, 4) if n else 0.0, "baseline_error_rate": 0.0,
+                    "recent_requests": int(n), "score": r["score"],
+                    "status": "incident" if top and r["service"] == top["service"] and r["score"] >= 2.0 else "healthy"})
+    return sorted(out, key=lambda r: (r["status"] != "incident", -r["score"]))
+
+
 def case_info(case_id: str) -> dict:
+    if case_id == LIVE:
+        now, f = _utcnow(), live_fault_truth()
+        return {"case_id": LIVE, "root_cause_service": f and f["service"], "fault_type": f and f["kind"],
+                "inject_ts": f and _iso(f["since"]), "start_ts": _iso(now - timedelta(minutes=20)), "end_ts": _iso(now),
+                "n_logs": 0, "n_spans": 0}
     c = next((c for c in list_cases() if c["case_id"] == case_id), None)
     if not c:
         raise KeyError(f"cas inconnu : {case_id}")
@@ -251,6 +315,9 @@ def case_info(case_id: str) -> dict:
 
 def case_periods(case_id: str):
     """Fenêtre du cas découpée en tiers : référence = 1er tiers, incident = dernier tiers."""
+    if case_id == LIVE:
+        now = _utcnow()
+        return now - timedelta(minutes=20), now - timedelta(minutes=3), now - timedelta(seconds=90), now
     info = case_info(case_id)
     cs, ce = datetime.fromisoformat(info["start_ts"]), datetime.fromisoformat(info["end_ts"])
     third = (ce - cs) / 3
@@ -266,7 +333,8 @@ def target_service(operation: str) -> str | None:
     return m.group(1).lower() if m and "Health" not in operation else None
 
 
-def score_services(before: dict, after: dict, min_spans: int = 30, degraded: float = 1.5) -> list[dict]:
+def score_services(before: dict, after: dict, min_spans: int = 30, degraded: float = 1.5,
+                   error_signal: bool = False) -> list[dict]:
     """before/after : {(service, operation): (n, mean_ms, errors)} -> services classés par dégradation.
 
     Trois signaux, on garde le plus fort :
@@ -309,10 +377,16 @@ def score_services(before: dict, after: dict, min_spans: int = 30, degraded: flo
             if base < 1.3:  # émetteur lui-même sain : la lenteur est bien celle de la cible
                 rel.append(ratio / max(1.0, base))
         target = statistics.median(rel) if rel else 0.0
+        err_sig = 0.0
+        if error_signal:  # taux d'erreur des opérations servies par X (après), utile pour les pannes « erreurs »
+            sn = sum(after[(svc, r[1])][0] for r in rows if r[0] == svc and r[2] and normalize_service(svc) == r[2])
+            se = sum(after[(svc, r[1])][2] for r in rows if r[0] == svc and r[2] and normalize_service(svc) == r[2])
+            err_sig = 1 + 10 * se / sn if sn and se / sn >= 0.1 else 0.0
         mine = [r for r in rows if r[0] == svc or (r[2] and normalize_service(svc) == r[2])]
         top = sorted(mine, key=lambda r: r[3], reverse=True)[:3]
-        out.append({"service": svc, "score": round(max(srv, emitter, target), 2),
-                    "signals": {"served": round(srv, 2), "outbound": round(emitter, 2), "inbound": round(target, 2)},
+        out.append({"service": svc, "score": round(max(srv, emitter, target, err_sig), 2),
+                    "signals": {"served": round(srv, 2), "outbound": round(emitter, 2), "inbound": round(target, 2),
+                                "errors": round(err_sig, 2)},
                     "errors_after": sum(r[6] for r in rows if r[0] == svc),
                     "top_operations": [{"operation": r[1], "emitter": r[0], "before_ms": round(r[4], 1),
                                             "after_ms": round(r[5], 1)} for r in top]})
@@ -366,7 +440,8 @@ def case_root_cause_spans(case_id: str) -> dict:
         return _fixture("case_spans")
     b0, b1, a0, a1 = case_periods(case_id)
     osc = _opensearch()
-    ranked = score_services(_op_stats(osc, case_id, b0, b1), _op_stats(osc, case_id, a0, a1))
+    ranked = score_services(_op_stats(osc, case_id, b0, b1), _op_stats(osc, case_id, a0, a1),
+                            min_spans=20 if case_id == LIVE else 30, error_signal=case_id == LIVE)
     if not ranked:
         return {"operations": [], "faulty_operation": None, "faulty_service": None, "error_count": 0, "p99_ms": None}
     top = ranked[0]
