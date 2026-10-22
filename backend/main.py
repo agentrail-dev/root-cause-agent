@@ -11,7 +11,8 @@ app = FastAPI(title="Root Cause Agent")
 
 
 class DiagnoseRequest(BaseModel):
-    question: str
+    question: str = "Diagnostiquer l'incident en cours"
+    service: str | None = None
 
 
 @app.get("/health")
@@ -24,9 +25,15 @@ def diagnose(req: DiagnoseRequest):
     """Flux NDJSON : un événement JSON par ligne (step_start / step_done / final / error)."""
     def gen():
         try:
-            for ev in run_stream(req.question):
+            for ev in run_stream(req.question, req.service):
                 yield json.dumps(ev, ensure_ascii=False, default=str) + "\n"
         except Exception as e:
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+@app.get("/incidents")
+def incidents():
+    """Santé de tous les services ; ceux en statut `incident` sont des incidents ouverts."""
+    return {"services": tools.services_health()}

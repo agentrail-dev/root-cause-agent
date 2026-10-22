@@ -42,3 +42,10 @@ def test_demo_mode_end_to_end(monkeypatch):
     assert final["root_cause"]["faulty_component"] == "db.query.orders"
     assert final["metrics"]["accuracy"] == 1.0
     assert sum(e["type"] == "step_done" for e in events) == 5
+
+
+def test_services_health_flags_incident_first():
+    rows = [("auth", 50, 0, 100, 1), ("pay", 300, 140, 700, 7), ("tiny", 5, 5, 10, 0)]
+    res = tools.summarize_services_health(rows)
+    assert [r["service"] for r in res][0] == "pay" and res[0]["status"] == "incident"
+    assert {r["service"]: r["status"] for r in res}["tiny"] == "healthy"  # trop peu de trafic

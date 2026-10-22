@@ -61,6 +61,11 @@ def _fmt_ts(ts: str | None) -> str:
 
 # ---------- Nœuds ----------
 def analyze_question(state: AgentState) -> dict:
+    if state.get("service_name"):  # incident sélectionné dans la console : pas besoin d'extraire
+        svc, win = state["service_name"], state.get("time_window_minutes") or 60
+        return {"service_name": svc, "time_window_minutes": win,
+                "timeline": [_event("analyze_question", f"Service cible : {svc}, fenêtre : {win} min",
+                                    {"service_name": svc, "time_window_minutes": win})]}
     q = state["question"]
     services = ", ".join(KNOWN_SERVICES)
     out = llm_structured(ANALYZE_PROMPT.format(services=services), q, QuestionAnalysis)
@@ -139,9 +144,14 @@ def synthesize(state: AgentState) -> dict:
             faulty_component=comp,
             evidence=f"{sp.get('error_count', 0)} spans en erreur sur {comp}{p99}",
             business_impact=f"{bi['pending_orders']} commandes client bloquées en statut pending",
+            next_steps=[f"Examiner le plan d'exécution et les verrous de {comp}",
+                        f"Débloquer ou rejouer les {bi['pending_orders']} commandes pending une fois corrigé",
+                        f"Ajouter une alerte sur le p99 de {comp}"],
             summary=(f"À {start}, l'opération {comp} a subi une dégradation{p99} : "
                      f"{sp.get('error_count', 0)} spans en erreur, {bi['pending_orders']} commandes bloquées."),
         )
+    if sp.get("faulty_operation"):  # le composant vient de la donnée, pas de la prose du LLM
+        rc.faulty_component = sp["faulty_operation"]
     return {
         "root_cause": rc.model_dump(),
         "evidence_count": len(ev),
@@ -173,12 +183,13 @@ def ground_truth_operation() -> str | None:
     return None
 
 
-def run_stream(question: str) -> Iterator[dict]:
+def run_stream(question: str, service: str | None = None) -> Iterator[dict]:
     """Génère des événements : step_start, step_done, final (avec métriques)."""
     t0 = time.perf_counter()
     state: dict = {"question": question, "timeline": []}
     yield {"type": "step_start", "step": STEPS[0], "label": STEP_LABELS[STEPS[0]]}
-    for update in GRAPH.stream({"question": question, "timeline": []}, stream_mode="updates"):
+    for update in GRAPH.stream({"question": question, "timeline": [], **({"service_name": service} if service else {})},
+                              stream_mode="updates"):
         for node, delta in update.items():
             state.update({k: v for k, v in delta.items() if k != "timeline"})
             for ev in delta.get("timeline", []):
@@ -196,4 +207,6 @@ def run_stream(question: str) -> Iterator[dict]:
         "evidence_count": state["evidence_count"],
         "accuracy": None if truth is None else (1.0 if found == truth else 0.0),
         "ground_truth": truth,
-    }}
+    }, "service": state["service_name"], "evidence": _evidence(state),
+        "data": {"error_rate": state["error_rate"], "slow_spans": state["slow_spans"],
+                 "business_impact": state["business_impact"]}}

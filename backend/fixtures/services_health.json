@@ -1,0 +1,30 @@
+[
+ {
+  "service": "payment-processor",
+  "recent_error_rate": 0.47,
+  "baseline_error_rate": 0.01,
+  "recent_requests": 320,
+  "status": "incident"
+ },
+ {
+  "service": "checkout-api",
+  "recent_error_rate": 0.01,
+  "baseline_error_rate": 0.01,
+  "recent_requests": 55,
+  "status": "healthy"
+ },
+ {
+  "service": "inventory-service",
+  "recent_error_rate": 0.0,
+  "baseline_error_rate": 0.01,
+  "recent_requests": 48,
+  "status": "healthy"
+ },
+ {
+  "service": "auth-service",
+  "recent_error_rate": 0.02,
+  "baseline_error_rate": 0.01,
+  "recent_requests": 61,
+  "status": "healthy"
+ }
+]

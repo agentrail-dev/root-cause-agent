@@ -16,6 +16,7 @@ class RootCause(BaseModel):
     evidence: str = Field(description="Preuve chiffrée issue des requêtes")
     business_impact: str = Field(description="Impact métier chiffré")
     summary: str = Field(description="Phrase de cause racine, en français")
+    next_steps: list[str] = Field(default_factory=list, description="2 à 3 actions de remédiation concrètes, déduites uniquement des preuves")
 
 
 class TimelineEvent(BaseModel):

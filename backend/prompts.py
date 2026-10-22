@@ -20,8 +20,11 @@ Services connus : {services}. Choisis le nom technique exact le plus proche."""
 
 SYNTHESIZE_PROMPT = SYSTEM_PROMPT + """
 
-TÂCHE : produis la conclusion causale à partir des résultats ci-dessous (JSON)."""
+TÂCHE : produis la conclusion causale à partir des résultats ci-dessous (JSON), en 2 phrases maximum pour `summary`, plus 2 à 3 `next_steps` de remédiation concrètes déduites uniquement des preuves."""
 
 KNOWN_SERVICES = {
-    "payment-processor": ["paiement", "payment", "paiements", "checkout"],
+    "payment-processor": ["paiement", "payment", "paiements"],
+    "checkout-api": ["checkout", "panier"],
+    "inventory-service": ["stock", "inventory", "inventaire"],
+    "auth-service": ["auth", "connexion", "login"],
 }

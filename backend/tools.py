@@ -88,6 +88,40 @@ def clickhouse_error_rate(service_name: str, time_window_minutes: int = 60) -> d
     return summarize_error_rate(rows)
 
 
+# ---------- Détection d'incidents (vue d'ensemble) ----------
+SERVICES_HEALTH_SQL = """
+SELECT service_name,
+       countIf(timestamp >= now() - INTERVAL 10 MINUTE) AS recent_n,
+       countIf(timestamp >= now() - INTERVAL 10 MINUTE AND status_code >= 500) AS recent_err,
+       countIf(timestamp < now() - INTERVAL 10 MINUTE) AS base_n,
+       countIf(timestamp < now() - INTERVAL 10 MINUTE AND status_code >= 500) AS base_err
+FROM logs
+WHERE timestamp >= now() - INTERVAL {window:UInt32} MINUTE
+GROUP BY service_name
+ORDER BY service_name
+"""
+
+
+def summarize_services_health(rows: list[tuple], spike_factor: float = 3.0, min_rate: float = 0.05,
+                              min_requests: int = 20) -> list[dict]:
+    """rows: (service, recent_n, recent_err, base_n, base_err) -> santé + statut par service."""
+    out = []
+    for svc, rn, re_, bn, be in rows:
+        recent = re_ / rn if rn else 0.0
+        base = be / bn if bn else 0.0
+        incident = rn >= min_requests and recent >= max(min_rate, spike_factor * base)
+        out.append({"service": svc, "recent_error_rate": round(recent, 4), "baseline_error_rate": round(base, 4),
+                    "recent_requests": int(rn), "status": "incident" if incident else "healthy"})
+    return sorted(out, key=lambda r: (r["status"] != "incident", -r["recent_error_rate"]))
+
+
+def services_health(window_minutes: int = 60) -> list[dict]:
+    if demo_mode():
+        return _fixture("services_health")
+    res = clickhouse_client().query(SERVICES_HEALTH_SQL, parameters={"window": window_minutes})
+    return summarize_services_health(res.result_rows)
+
+
 # ---------- Outil 2 : OpenSearch ----------
 def slow_spans_body(service_name: str, threshold_ms: int) -> dict:
     return {

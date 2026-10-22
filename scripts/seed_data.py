@@ -21,6 +21,9 @@ def gen(now: datetime):
         logs.append((ts, SERVICE, 500 if rnd.random() < 0.01 else 200))
     for _ in range(N_ERROR_LOGS):
         logs.append((start + timedelta(seconds=rnd.uniform(0, 600)), SERVICE, 500))
+    for svc in ("checkout-api", "inventory-service", "auth-service"):  # services sains (contexte)
+        for _ in range(300):
+            logs.append((now - timedelta(seconds=rnd.uniform(0, 3600)), svc, 500 if rnd.random() < 0.01 else 200))
     spans = []
     for i in range(N_ERROR_SPANS):
         ts = start + timedelta(seconds=rnd.uniform(0, 600))
