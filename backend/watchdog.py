@@ -6,8 +6,11 @@ Cycle (toutes les WATCHDOG_INTERVAL secondes, 60 par défaut) :
   3. notification optionnelle : POST JSON {"text": ...} vers SLACK_WEBHOOK_URL (compatible Slack/Mattermost)
   4. service incident -> healthy : l'alerte est marquée résolue (durée d'incident calculée)
 
-Un incident déjà ouvert n'est ni re-diagnostiqué ni re-notifié. L'historique est en mémoire (50 alertes).
+Un incident déjà ouvert n'est ni re-diagnostiqué ni re-notifié.
+Les alertes sont persistées dans PostgreSQL (table `alerts`) : elles survivent aux redémarrages et un incident
+ouvert avant un redémarrage n'est pas re-notifié. Sans POSTGRES_URL (ou en DEMO_MODE), repli en mémoire.
 """
+import json
 import os
 import threading
 import time
@@ -23,6 +26,60 @@ _lock = threading.Lock()
 _alerts: deque = deque(maxlen=50)
 _open: dict[str, dict] = {}  # service -> alerte ouverte
 _status = {"running": False, "last_tick": None, "last_error": None, "interval": None, "ticks": 0}
+
+
+def _db():
+    """Connexion PostgreSQL ou None (pas de POSTGRES_URL, DEMO_MODE, ou base injoignable)."""
+    if not os.getenv("POSTGRES_URL") or tools.demo_mode():
+        return None
+    try:
+        import psycopg
+
+        return psycopg.connect(os.environ["POSTGRES_URL"], connect_timeout=5, autocommit=True)
+    except Exception as e:
+        _status["last_error"] = f"postgres: {e}"
+        return None
+
+
+_DDL = """CREATE TABLE IF NOT EXISTS alerts (
+    id text PRIMARY KEY, service text NOT NULL, opened_at timestamptz NOT NULL,
+    resolved_at timestamptz, notified boolean NOT NULL DEFAULT false, payload jsonb NOT NULL)"""
+
+
+def _persist(alert: dict):
+    conn = _db()
+    if not conn:
+        return
+    try:
+        with conn:
+            conn.execute(_DDL)
+            conn.execute(
+                "INSERT INTO alerts (id, service, opened_at, resolved_at, notified, payload) "
+                "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET "
+                "resolved_at = EXCLUDED.resolved_at, notified = EXCLUDED.notified, payload = EXCLUDED.payload",
+                (alert["id"], alert["service"], alert["opened_at"] + "+00", alert["resolved_at"] and alert["resolved_at"] + "+00",
+                 alert["notified"], json.dumps(alert)))
+    except Exception as e:
+        _status["last_error"] = f"postgres: {e}"
+    finally:
+        conn.close()
+
+
+def _load():
+    """Recharge l'historique (50 dernières alertes) depuis PostgreSQL."""
+    conn = _db()
+    if not conn:
+        return []
+    try:
+        with conn:
+            conn.execute(_DDL)
+            rows = conn.execute("SELECT payload FROM alerts ORDER BY opened_at DESC LIMIT 50").fetchall()
+        return [r[0] for r in rows]
+    except Exception as e:
+        _status["last_error"] = f"postgres: {e}"
+        return []
+    finally:
+        conn.close()
 
 
 def _now() -> str:
@@ -65,10 +122,13 @@ def tick() -> list[dict]:
             with _lock:
                 _open[svc] = alert
                 _alerts.appendleft(alert)
+            _persist(alert)
             created.append(alert)
         elif s["status"] == "healthy" and is_open:
             with _lock:
-                _open.pop(svc)["resolved_at"] = _now()
+                resolved = _open.pop(svc)
+                resolved["resolved_at"] = _now()
+            _persist(resolved)
     with _lock:
         _status.update(last_tick=_now(), ticks=_status["ticks"] + 1, last_error=None)
     return created
@@ -89,6 +149,11 @@ def start() -> bool:
     if os.getenv("WATCHDOG", "false").lower() not in ("1", "true", "yes") or _status["running"]:
         return False
     interval = int(os.getenv("WATCHDOG_INTERVAL", "60"))
+    with _lock:  # reprise après redémarrage : historique + incidents encore ouverts
+        for a in reversed(_load()):
+            _alerts.appendleft(a)
+            if not a["resolved_at"]:
+                _open[a["service"]] = a
     _status.update(running=True, interval=interval)
     threading.Thread(target=_loop, args=(interval,), daemon=True, name="watchdog").start()
     return True
